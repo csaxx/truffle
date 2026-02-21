@@ -15,15 +15,11 @@ import java.util.*;
 /**
  * Manages the lifecycle of per-file GraalPy execution contexts.
  * <p>
- * On construction the interpreter reads {@code python/index.txt} from the
- * classpath, then loads and compiles every {@code .py} file listed there into
- * its own isolated {@link Context}. All contexts share the static
- * {@code SHARED_ENGINE} so compiled ASTs are reused across contexts.
+ * The caller must invoke {@link #reload(String)} before using the interpreter.
+ * All contexts share the static {@code SHARED_ENGINE} so compiled ASTs are
+ * reused across contexts.
  */
 public class GraalPyInterpreter implements AutoCloseable {
-
-    private static final String PYTHON_DIR = "python";
-    private static final String INDEX = PYTHON_DIR + "/index.txt";
 
     // Shared compilation engine — never closed; caches compiled ASTs across contexts.
     private static final Engine SHARED_ENGINE = Engine.newBuilder("python").build();
@@ -34,9 +30,7 @@ public class GraalPyInterpreter implements AutoCloseable {
     // insertion-ordered so getMembers() preserves index.txt order
     private final HashMap<String, FileContext> fileContexts = new LinkedHashMap<>();
 
-    public GraalPyInterpreter() throws IOException {
-        reload();
-    }
+    public GraalPyInterpreter() { }
 
     private Context createContext() {
         return Context.newBuilder("python")
@@ -56,20 +50,28 @@ public class GraalPyInterpreter implements AutoCloseable {
     }
 
     /**
-     * Re-reads index.txt and reconciles per-file contexts:
+     * Returns the names of all currently loaded files, in index order.
+     */
+    public List<String> getLoadedFileNames() {
+        return List.copyOf(fileContexts.keySet());
+    }
+
+    /**
+     * Re-reads {@code directory/index.txt} and reconciles per-file contexts:
      * removed files get their Context closed, new/changed files get a fresh Context.
      *
+     * @param directory classpath directory prefix (e.g. {@code "python"})
      * @return {@code true} if anything changed (caller must re-fetch Value refs);
      * {@code false} if nothing changed.
      */
-    public synchronized boolean reload() throws IOException {
-        List<String> currentNames = readIndex();
+    public synchronized boolean reload(String directory) throws IOException {
+        List<String> currentNames = readIndex(directory);
 
         // Read contents and compute hashes for all current files
         Map<String, String> currentContents = new LinkedHashMap<>();
         Map<String, String> currentHashes = new LinkedHashMap<>();
         for (String name : currentNames) {
-            String code = readResource(PYTHON_DIR + "/" + name);
+            String code = readResource(directory + "/" + name);
             currentContents.put(name, code);
             currentHashes.put(name, sha256(name, code));
         }
@@ -116,8 +118,8 @@ public class GraalPyInterpreter implements AutoCloseable {
         return true;
     }
 
-    private List<String> readIndex() throws IOException {
-        return readResource(INDEX).lines()
+    private List<String> readIndex(String directory) throws IOException {
+        return readResource(directory + "/index.txt").lines()
                 .map(String::trim)
                 .filter(l -> !l.isEmpty() && !l.startsWith("#"))
                 .toList();

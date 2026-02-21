@@ -27,6 +27,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
     @Override
     public void open(OpenContext openContext) throws Exception {
         interpreter = new GraalPyInterpreter();
+        interpreter.reload("python");
         pyProcessElements = interpreter.getMembers("process_element");
     }
 
@@ -34,6 +35,13 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
     public void close() throws Exception {
         if (interpreter != null) {
             interpreter.close();
+        }
+    }
+
+    /** Hot-reloads Python scripts from the production {@code python/} directory. */
+    public void reload() throws IOException {
+        if (interpreter.reload("python")) {
+            pyProcessElements = interpreter.getMembers("process_element");
         }
     }
 
