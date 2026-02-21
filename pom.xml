@@ -16,6 +16,7 @@
     <maven.compiler.source>21</maven.compiler.source>
     <maven.compiler.target>21</maven.compiler.target>
     <flink.version>2.2.0</flink.version>
+    <graalvm.polyglot.version>23.1.10</graalvm.polyglot.version>
   </properties>
 
   <dependencies>
@@ -30,6 +31,21 @@
       <groupId>org.apache.flink</groupId>
       <artifactId>flink-clients</artifactId>
       <version>${flink.version}</version>
+    </dependency>
+
+    <!-- GraalPy Polyglot API — matches jvmci-23.1 in the installed GraalVM JDK -->
+    <dependency>
+      <groupId>org.graalvm.polyglot</groupId>
+      <artifactId>polyglot</artifactId>
+      <version>${graalvm.polyglot.version}</version>
+    </dependency>
+
+    <!-- GraalPy community runtime — POM type imports all GraalPy JARs transitively -->
+    <dependency>
+      <groupId>org.graalvm.polyglot</groupId>
+      <artifactId>python-community</artifactId>
+      <version>${graalvm.polyglot.version}</version>
+      <type>pom</type>
     </dependency>
 
     <dependency>

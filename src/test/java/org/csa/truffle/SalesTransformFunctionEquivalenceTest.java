@@ -2,6 +2,8 @@ package org.csa.truffle;
 
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
 import org.apache.flink.streaming.util.ProcessFunctionTestHarnesses;
+import org.csa.truffle.function.ProcessFunctionJava;
+import org.csa.truffle.function.ProcessFunctionPython;
 import org.junit.jupiter.api.Test;
 
 import java.io.BufferedReader;
@@ -15,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SalesTransformFunctionEquivalenceTest {
 
-    private static final String[] CSV_RESOURCES = {"sales_q1.csv", "sales_q2.csv", "sales_q3.csv"};
+    private static final String[] CSV_RESOURCES = {"data/sales_q1.csv", "data/sales_q2.csv", "data/sales_q3.csv"};
 
     private List<String> loadAllLines() throws Exception {
         List<String> lines = new ArrayList<>();
@@ -45,8 +47,8 @@ class SalesTransformFunctionEquivalenceTest {
     void v1AndV2ProduceIdenticalOutput() throws Exception {
         List<String> input = loadAllLines();
 
-        List<String> out1 = new ArrayList<>(runThroughHarness(new SalesTransformFunction(), input));
-        List<String> out2 = new ArrayList<>(runThroughHarness(new SalesTransformFunctionV2(), input));
+        List<String> out1 = new ArrayList<>(runThroughHarness(new ProcessFunctionJava(), input));
+        List<String> out2 = new ArrayList<>(runThroughHarness(new ProcessFunctionPython(), input));
 
         assertFalse(out1.isEmpty(), "V1 produced no output");
         assertFalse(out2.isEmpty(), "V2 produced no output");
@@ -58,14 +60,14 @@ class SalesTransformFunctionEquivalenceTest {
 
     @Test
     void outputHasExpectedRecordCount() throws Exception {
-        List<String> out = runThroughHarness(new SalesTransformFunction(), loadAllLines());
+        List<String> out = runThroughHarness(new ProcessFunctionJava(), loadAllLines());
         // 3 CSVs: 7 + 7 + 6 data rows (headers excluded by the ProcessFunction)
         assertEquals(20, out.size());
     }
 
     @Test
     void eachOutputLineHasEightFields() throws Exception {
-        for (String line : runThroughHarness(new SalesTransformFunction(), loadAllLines())) {
+        for (String line : runThroughHarness(new ProcessFunctionJava(), loadAllLines())) {
             assertEquals(8, line.split(",", -1).length,
                     "Expected 8 fields in: " + line);
         }

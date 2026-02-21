@@ -3,6 +3,8 @@ package org.csa.truffle;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.CloseableIterator;
+import org.csa.truffle.function.ProcessFunctionJava;
+import org.csa.truffle.function.ProcessFunctionPython;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -18,7 +20,7 @@ import java.util.stream.Collectors;
  * Truffle Flink job.
  *
  * Reads three quarterly sales CSV files from the classpath, applies
- * {@link SalesTransformFunction} (V1) and {@link SalesTransformFunctionV2} (V2)
+ * {@link ProcessFunctionJava} (V1) and {@link ProcessFunctionPython} (V2)
  * to enrich each record, then writes the results to separate subdirectories
  * under {@code output/}.
  *
@@ -28,18 +30,18 @@ import java.util.stream.Collectors;
 public class TruffleJob {
 
     static final String[] CSV_RESOURCES = {
-            "sales_q1.csv",
-            "sales_q2.csv",
-            "sales_q3.csv"
+            "data/sales_q1.csv",
+            "data/sales_q2.csv",
+            "data/sales_q3.csv"
     };
 
     public static void main(String[] args) throws Exception {
         List<String> allLines = loadCsvLines();
 
-        List<String> v1 = runTransform(allLines, new SalesTransformFunction());
+        List<String> v1 = runTransform(allLines, new ProcessFunctionJava());
         writeOutput(Paths.get("output", "v1", "sales_transformed.csv"), v1);
 
-        List<String> v2 = runTransform(allLines, new SalesTransformFunctionV2());
+        List<String> v2 = runTransform(allLines, new ProcessFunctionPython());
         writeOutput(Paths.get("output", "v2", "sales_transformed.csv"), v2);
 
         System.out.println("Done. Output written to output/v1/ and output/v2/");

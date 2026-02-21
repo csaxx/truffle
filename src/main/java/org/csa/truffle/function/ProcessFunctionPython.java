@@ -1,11 +1,15 @@
-package org.csa.truffle;
+package org.csa.truffle.function;
 
+import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.Collector;
+import org.csa.truffle.graal.GraalPyInterpreter;
 
 import java.util.Locale;
 
 /**
+ * V2 variant of {@link ProcessFunctionJava}.
+ *
  * Parses raw sales CSV lines and emits enriched records with a computed
  * totalPrice and a size category (small / medium / large).
  *
@@ -13,7 +17,21 @@ import java.util.Locale;
  * Output fields (8): transactionId, customerId, product, quantity, unitPrice,
  *                    totalPrice, category, date
  */
-public class SalesTransformFunction extends ProcessFunction<String, String> {
+public class ProcessFunctionPython extends ProcessFunction<String, String> {
+
+    private transient GraalPyInterpreter interpreter;
+
+    @Override
+    public void open(OpenContext openContext) throws Exception {
+        interpreter = new GraalPyInterpreter();
+    }
+
+    @Override
+    public void close() throws Exception {
+        if (interpreter != null) {
+            interpreter.close();
+        }
+    }
 
     @Override
     public void processElement(String line, Context ctx, Collector<String> out) {
