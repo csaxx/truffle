@@ -6,6 +6,8 @@ import org.apache.flink.util.Collector;
 import java.util.Locale;
 
 /**
+ * V2 variant of {@link SalesTransformFunction}.
+ *
  * Parses raw sales CSV lines and emits enriched records with a computed
  * totalPrice and a size category (small / medium / large).
  *
@@ -13,7 +15,7 @@ import java.util.Locale;
  * Output fields (8): transactionId, customerId, product, quantity, unitPrice,
  *                    totalPrice, category, date
  */
-public class SalesTransformFunction extends ProcessFunction<String, String> {
+public class SalesTransformFunctionV2 extends ProcessFunction<String, String> {
 
     @Override
     public void processElement(String line, Context ctx, Collector<String> out) {

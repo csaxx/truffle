@@ -1,7 +1,7 @@
 package org.csa.truffle;
 
-import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.CloseableIterator;
 
 import java.io.BufferedReader;
@@ -18,52 +18,60 @@ import java.util.stream.Collectors;
  * Truffle Flink job.
  *
  * Reads three quarterly sales CSV files from the classpath, applies
- * {@link SalesTransformFunction} to enrich each record, then writes the
- * results to {@code output/sales_transformed.csv} in the working directory.
+ * {@link SalesTransformFunction} (V1) and {@link SalesTransformFunctionV2} (V2)
+ * to enrich each record, then writes the results to separate subdirectories
+ * under {@code output/}.
  *
  * Run locally:
  *   mvn exec:java
  */
 public class TruffleJob {
 
-    private static final String[] CSV_RESOURCES = {
+    static final String[] CSV_RESOURCES = {
             "sales_q1.csv",
             "sales_q2.csv",
             "sales_q3.csv"
     };
 
-    private static final Path OUTPUT_FILE = Paths.get("output", "sales_transformed.csv");
-
     public static void main(String[] args) throws Exception {
+        List<String> allLines = loadCsvLines();
 
-        // --- load CSV lines from classpath -----------------------------------
-        List<String> allLines = new ArrayList<>();
+        List<String> v1 = runTransform(allLines, new SalesTransformFunction());
+        writeOutput(Paths.get("output", "v1", "sales_transformed.csv"), v1);
+
+        List<String> v2 = runTransform(allLines, new SalesTransformFunctionV2());
+        writeOutput(Paths.get("output", "v2", "sales_transformed.csv"), v2);
+
+        System.out.println("Done. Output written to output/v1/ and output/v2/");
+    }
+
+    static List<String> loadCsvLines() throws Exception {
+        List<String> lines = new ArrayList<>();
         for (String resource : CSV_RESOURCES) {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                     TruffleJob.class.getClassLoader().getResourceAsStream(resource)))) {
-                allLines.addAll(reader.lines().collect(Collectors.toList()));
+                lines.addAll(reader.lines().collect(Collectors.toList()));
             }
         }
+        return lines;
+    }
 
-        // --- build the Flink pipeline ----------------------------------------
+    static List<String> runTransform(List<String> input, ProcessFunction<String, String> fn)
+            throws Exception {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(1);
-
-        DataStream<String> rawStream = env.fromData(allLines);
-
-        DataStream<String> transformed = rawStream.process(new SalesTransformFunction());
-
-        // --- collect results and write to disk --------------------------------
-        Files.createDirectories(OUTPUT_FILE.getParent());
-
-        try (CloseableIterator<String> results = transformed.executeAndCollect();
-             PrintWriter writer = new PrintWriter(Files.newBufferedWriter(OUTPUT_FILE))) {
-
-            writer.println("transactionId,customerId,product,quantity,unitPrice,totalPrice,category,date");
-
-            results.forEachRemaining(writer::println);
+        List<String> result = new ArrayList<>();
+        try (CloseableIterator<String> it = env.fromData(input).process(fn).executeAndCollect()) {
+            it.forEachRemaining(result::add);
         }
+        return result;
+    }
 
-        System.out.println("Done. Output written to: " + OUTPUT_FILE.toAbsolutePath());
+    private static void writeOutput(Path file, List<String> lines) throws Exception {
+        Files.createDirectories(file.getParent());
+        try (PrintWriter w = new PrintWriter(Files.newBufferedWriter(file))) {
+            w.println("transactionId,customerId,product,quantity,unitPrice,totalPrice,category,date");
+            lines.forEach(w::println);
+        }
     }
 }
