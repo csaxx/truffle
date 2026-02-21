@@ -6,6 +6,8 @@ import org.apache.flink.util.Collector;
 import org.csa.truffle.graal.GraalPyInterpreter;
 import org.graalvm.polyglot.Value;
 
+import java.io.IOException;
+
 /**
  * V2 variant of {@link ProcessFunctionJava}.
  *
@@ -39,5 +41,13 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
     @Override
     public void processElement(String line, Context ctx, Collector<String> out) {
         pyProcessElement.execute(line, out);
+    }
+
+    public void reload() throws IOException {
+        if (interpreter.reload()) {
+            pyProcessElement = interpreter.getContext()
+                    .getBindings("python")
+                    .getMember("process_element");
+        }
     }
 }
