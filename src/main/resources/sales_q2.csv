@@ -1,0 +1,8 @@
+transactionId,customerId,product,quantity,unitPrice,date
+T008,C102,Super Thingamajig,20,9.99,2024-04-10
+T009,C107,Widget Pro,7,29.99,2024-04-25
+T010,C103,Premium Doohickey,2,499.00,2024-05-08
+T011,C108,Gadget X,3,149.50,2024-05-19
+T012,C104,Mega Contraption,1,999.99,2024-06-01
+T013,C109,Widget Pro,15,29.99,2024-06-14
+T014,C101,Super Thingamajig,50,9.99,2024-06-30
