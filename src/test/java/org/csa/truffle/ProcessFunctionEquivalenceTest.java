@@ -15,7 +15,7 @@ import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class SalesTransformFunctionEquivalenceTest {
+class ProcessFunctionEquivalenceTest {
 
     private static final String[] CSV_RESOURCES = {"data/sales_q1.csv", "data/sales_q2.csv", "data/sales_q3.csv"};
 

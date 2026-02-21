@@ -7,6 +7,7 @@ import org.csa.truffle.graal.GraalPyInterpreter;
 import org.graalvm.polyglot.Value;
 
 import java.io.IOException;
+import java.util.List;
 
 /**
  * V2 variant of {@link ProcessFunctionJava}.
@@ -21,14 +22,12 @@ import java.io.IOException;
 public class ProcessFunctionPython extends ProcessFunction<String, String> {
 
     private transient GraalPyInterpreter interpreter;
-    private transient Value pyProcessElement;
+    private transient List<Value> pyProcessElements;
 
     @Override
     public void open(OpenContext openContext) throws Exception {
         interpreter = new GraalPyInterpreter();
-        pyProcessElement = interpreter.getContext()
-                .getBindings("python")
-                .getMember("process_element");
+        pyProcessElements = interpreter.getMembers("process_element");
     }
 
     @Override
@@ -40,14 +39,9 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
 
     @Override
     public void processElement(String line, Context ctx, Collector<String> out) {
-        pyProcessElement.execute(line, out);
-    }
-
-    public void reload() throws IOException {
-        if (interpreter.reload()) {
-            pyProcessElement = interpreter.getContext()
-                    .getBindings("python")
-                    .getMember("process_element");
+        for (Value fn : pyProcessElements) {
+            fn.execute(line, out);
         }
     }
+
 }
