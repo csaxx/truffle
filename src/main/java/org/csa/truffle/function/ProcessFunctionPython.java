@@ -38,9 +38,6 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
 
     @Override
     public void processElement(String line, Context ctx, Collector<String> out) {
-        Value result = pyProcessElement.execute(line);
-        if (!result.isNull()) {
-            out.collect(result.asString());
-        }
+        pyProcessElement.execute(line, out);
     }
 }

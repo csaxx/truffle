@@ -1,20 +1,27 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from flink_types import Collector
+
 # Sales transform logic — Python implementation
 
-def process_element(line):
+def process_element(line: str, out: Collector) -> None:
     """
-    Parses a raw sales CSV line and returns an enriched CSV string, or None
-    if the line should be skipped (header, blank, malformed).
+    Parses a raw sales CSV line and emits an enriched CSV string via out.collect(),
+    which is the Flink Collector<String> passed in from Java.
+    Lines that are blank, headers, or malformed are silently dropped.
 
     Input  fields (6): transactionId, customerId, product, quantity, unitPrice, date
     Output fields (8): transactionId, customerId, product, quantity, unitPrice,
                        totalPrice, category, date
     """
     if not line.strip() or line.startswith('transactionId'):
-        return None
+        return
 
     fields = line.split(',')
     if len(fields) != 6:
-        return None
+        return
 
     try:
         transaction_id = fields[0].strip()
@@ -33,8 +40,8 @@ def process_element(line):
         else:
             category = 'large'
 
-        return (f"{transaction_id},{customer_id},{product},{quantity},"
-                f"{unit_price:.2f},{total_price:.2f},{category},{date}")
+        out.collect(f"{transaction_id},{customer_id},{product},{quantity},"
+                    f"{unit_price:.2f},{total_price:.2f},{category},{date}")
 
     except (ValueError, IndexError):
-        return None
+        return

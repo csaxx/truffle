@@ -56,6 +56,7 @@ classpath CSVs (sales_q{1,2,3}.csv)
 - **No Flink sink:** results are collected via `DataStream.executeAndCollect()` and written to disk with plain Java I/O. This avoids the deprecated `SinkFunction` / `RichSinkFunction` API from Flink 1.x.
 - **Parallelism 1:** set explicitly in `TruffleJob` to keep local output deterministic and single-file.
 - **CSV resources are loaded before the Flink graph is built** — the driver reads them from the classpath into a `List<String>` and feeds the list to `env.fromData()`. All three quarterly files are concatenated; header rows are filtered inside `SalesTransformFunction.processElement`.
+- **`ProcessFunctionPython` delegates entirely to Python** — `processElement` passes both the raw line and the Flink `Collector<String>` into `transform.py#process_element(line, out)`. The Python function calls `out.collect(...)` directly via GraalPy polyglot interop; no return value is used. This means all output routing logic lives in Python, not Java.
 
 ### Adding a new ProcessFunction
 
