@@ -4,6 +4,7 @@ import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.Collector;
 import org.csa.truffle.graal.GraalPyInterpreter;
+import org.csa.truffle.graal.source.ResourcePythonSource;
 import org.graalvm.polyglot.Value;
 
 import java.io.IOException;
@@ -26,8 +27,8 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
 
     @Override
     public void open(OpenContext openContext) throws Exception {
-        interpreter = new GraalPyInterpreter();
-        interpreter.reload("python");
+        interpreter = new GraalPyInterpreter(new ResourcePythonSource("python"));
+        interpreter.reload();
         pyProcessElements = interpreter.getMembers("process_element");
     }
 
@@ -40,15 +41,15 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
 
     /** Hot-reloads Python scripts from the production {@code python/} directory. */
     public void reload() throws IOException {
-        if (interpreter.reload("python")) {
+        if (interpreter.reload()) {
             pyProcessElements = interpreter.getMembers("process_element");
         }
     }
 
     @Override
     public void processElement(String line, Context ctx, Collector<String> out) {
-        for (Value fn : pyProcessElements) {
-            fn.execute(line, out);
+        for (Value pyProcessElement : pyProcessElements) {
+            pyProcessElement.execute(line, out);
         }
     }
 

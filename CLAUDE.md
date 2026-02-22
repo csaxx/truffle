@@ -84,6 +84,14 @@ overhead is only interpreter state, which is negligible at this scale.
 load, in execution order. Lines starting with `#` and blank lines are ignored.
 Files are resolved as classpath resources under `python/`.
 
+**PythonSource abstraction.** `GraalPyInterpreter` does not load files directly.
+Instead it accepts a `PythonSource` on construction, an interface with two methods:
+`listFiles()` (returns the ordered filename list) and `readFile(name)` (returns file
+content). `reload()` is a no-arg method that queries the injected source.
+The production implementation is `ResourcePythonSource`, which reads from a classpath
+directory via `index.txt`. Alternative implementations can load scripts from the
+filesystem, a database, or an in-memory map without changing `GraalPyInterpreter`.
+
 **`getMembers(String memberName)`** streams over all file contexts in index order and
 returns a `List<Value>` — one entry per file — for the named Python binding. The caller
 (e.g. `ProcessFunctionPython`) iterates the list to invoke every file's function.
