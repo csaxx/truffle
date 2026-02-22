@@ -8,16 +8,16 @@ import org.csa.truffle.function.ProcessFunctionPython;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
-import java.nio.file.Files;
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
+
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * Truffle Flink job.
@@ -61,9 +61,8 @@ public class TruffleJob {
     static List<String> loadCsvLines() throws Exception {
         List<String> lines = new ArrayList<>();
         for (String resource : CSV_RESOURCES) {
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                    TruffleJob.class.getClassLoader().getResourceAsStream(resource)))) {
-                lines.addAll(reader.lines().collect(Collectors.toList()));
+            try (InputStream is = TruffleJob.class.getClassLoader().getResourceAsStream(resource)) {
+                lines.addAll(IOUtils.readLines(is, StandardCharsets.UTF_8));
             }
         }
         return lines;
@@ -81,10 +80,9 @@ public class TruffleJob {
     }
 
     private static void writeOutput(Path file, List<String> lines) throws Exception {
-        Files.createDirectories(file.getParent());
-        try (PrintWriter w = new PrintWriter(Files.newBufferedWriter(file))) {
-            w.println("transactionId,customerId,product,quantity,unitPrice,totalPrice,category,date");
-            lines.forEach(w::println);
-        }
+        List<String> output = new ArrayList<>();
+        output.add("transactionId,customerId,product,quantity,unitPrice,totalPrice,category,date");
+        output.addAll(lines);
+        FileUtils.writeLines(file.toFile(), StandardCharsets.UTF_8.name(), output);
     }
 }

@@ -6,12 +6,13 @@ import org.csa.truffle.function.ProcessFunctionJava;
 import org.csa.truffle.function.ProcessFunctionPython;
 import org.junit.jupiter.api.Test;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
+import org.apache.commons.io.IOUtils;
+
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -22,9 +23,8 @@ class ProcessFunctionEquivalenceTest {
     private List<String> loadAllLines() throws Exception {
         List<String> lines = new ArrayList<>();
         for (String r : CSV_RESOURCES) {
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                    getClass().getClassLoader().getResourceAsStream(r)))) {
-                lines.addAll(reader.lines().collect(Collectors.toList()));
+            try (InputStream is = getClass().getClassLoader().getResourceAsStream(r)) {
+                lines.addAll(IOUtils.readLines(is, StandardCharsets.UTF_8));
             }
         }
         return lines;
