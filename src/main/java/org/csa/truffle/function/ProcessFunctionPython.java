@@ -5,12 +5,14 @@ import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.Collector;
 import org.csa.truffle.graal.GraalPyInterpreter;
 import org.csa.truffle.graal.source.ResourcePythonSource;
+import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 /**
  * V2 variant of {@link ProcessFunctionJava}.
@@ -27,7 +29,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
     private static final Logger log = LoggerFactory.getLogger(ProcessFunctionPython.class);
 
     private transient GraalPyInterpreter interpreter;
-    private transient List<Value> pyProcessElements;
+    private transient List<Map.Entry<String, Value>> pyProcessElements;
     private transient long lastGeneration = -1;
 
     @Override
@@ -35,7 +37,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
         log.info("Opening: loading Python scripts from classpath 'python/' directory");
         interpreter = new GraalPyInterpreter(new ResourcePythonSource("python"));
         interpreter.reload();
-        pyProcessElements = interpreter.getMembers("process_element");
+        pyProcessElements = interpreter.getNamedMembers("process_element");
         lastGeneration = interpreter.getGeneration();
         log.debug("Loaded {} process_element function(s)", pyProcessElements.size());
     }
@@ -52,7 +54,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
     public void reload() throws IOException {
         log.info("Hot-reload triggered");
         if (interpreter.reload()) {
-            pyProcessElements = interpreter.getMembers("process_element");
+            pyProcessElements = interpreter.getNamedMembers("process_element");
             lastGeneration = interpreter.getGeneration();
             log.info("Hot-reload complete: {} process_element function(s) active",
                      pyProcessElements.size());
@@ -65,11 +67,17 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
     public void processElement(String line, Context ctx, Collector<String> out) {
         long gen = interpreter.getGeneration();
         if (gen != lastGeneration) {
-            pyProcessElements = interpreter.getMembers("process_element");
+            pyProcessElements = interpreter.getNamedMembers("process_element");
             lastGeneration = gen;
         }
-        for (Value fn : pyProcessElements) {
-            fn.execute(line, out);
+        for (Map.Entry<String, Value> entry : pyProcessElements) {
+            try {
+                entry.getValue().execute(line, out);
+            } catch (PolyglotException e) {
+                RuntimeException wrapped = new RuntimeException(
+                        "Python error in '" + entry.getKey() + "' processing line: " + line, e);
+                log.error("Python execution failed in file '{}': {}", entry.getKey(), e.getMessage(), wrapped);
+            }
         }
     }
 
