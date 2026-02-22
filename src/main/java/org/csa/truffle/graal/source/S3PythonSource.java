@@ -1,5 +1,6 @@
 package org.csa.truffle.graal.source;
 
+import org.apache.commons.lang3.StringUtils;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
@@ -41,9 +42,7 @@ public class S3PythonSource implements PythonSource {
         this.s3 = s3;
         this.bucket = bucket;
         // Normalise: strip trailing slashes
-        String p = prefix;
-        while (p.endsWith("/")) p = p.substring(0, p.length() - 1);
-        this.prefix = p;
+        this.prefix = StringUtils.stripEnd(prefix, "/");
     }
 
     @Override

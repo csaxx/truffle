@@ -1,5 +1,7 @@
 package org.csa.truffle.graal.source;
 
+import org.apache.commons.lang3.StringUtils;
+
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -42,7 +44,7 @@ public class GitPythonSource implements PythonSource {
 
     /** Converts a repo URL + branch into the provider-specific raw-content base URL. */
     private static String buildRawBase(String repoUrl, String branch) {
-        String url = repoUrl.endsWith("/") ? repoUrl.substring(0, repoUrl.length() - 1) : repoUrl;
+        String url = StringUtils.removeEnd(repoUrl, "/");
         URI uri = URI.create(url);
         String host = uri.getHost();
         String path = uri.getPath(); // e.g. /owner/repo
@@ -73,7 +75,7 @@ public class GitPythonSource implements PythonSource {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .GET();
-        if (token != null && !token.isBlank()) {
+        if (StringUtils.isNotBlank(token)) {
             builder.header("Authorization", "Bearer " + token);
         }
         HttpResponse<String> response;
