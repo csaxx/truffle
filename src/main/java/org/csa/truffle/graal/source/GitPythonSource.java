@@ -1,6 +1,8 @@
 package org.csa.truffle.graal.source;
 
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.URI;
@@ -30,6 +32,8 @@ import java.util.List;
  */
 public class GitPythonSource implements PythonSource {
 
+    private static final Logger log = LoggerFactory.getLogger(GitPythonSource.class);
+
     private final HttpClient http;
     private final String rawBaseUrl;   // {provider-raw-prefix}/{branch}
     private final String directory;
@@ -40,6 +44,8 @@ public class GitPythonSource implements PythonSource {
         this.token = token;
         this.rawBaseUrl = buildRawBase(repoUrl, branch);
         this.http = HttpClient.newHttpClient();
+        log.info("Initialized: rawBaseUrl={}, directory={}, auth={}",
+                 rawBaseUrl, directory, StringUtils.isNotBlank(token) ? "token" : "none");
     }
 
     /** Converts a repo URL + branch into the provider-specific raw-content base URL. */
@@ -72,6 +78,7 @@ public class GitPythonSource implements PythonSource {
 
     private String fetch(String relativePath) throws IOException {
         String url = rawBaseUrl + "/" + relativePath;
+        log.debug("GET {}", url);
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .GET();

@@ -5,6 +5,8 @@ import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.CloseableIterator;
 import org.csa.truffle.function.ProcessFunctionJava;
 import org.csa.truffle.function.ProcessFunctionPython;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -13,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -29,6 +32,8 @@ import java.util.stream.Collectors;
  */
 public class TruffleJob {
 
+    private static final Logger log = LoggerFactory.getLogger(TruffleJob.class);
+
     static final String[] CSV_RESOURCES = {
             "data/sales_q1.csv",
             "data/sales_q2.csv",
@@ -36,15 +41,21 @@ public class TruffleJob {
     };
 
     public static void main(String[] args) throws Exception {
+        log.info("Loading CSV resources: {}", Arrays.toString(CSV_RESOURCES));
         List<String> allLines = loadCsvLines();
+        log.info("Loaded {} lines from {} CSV files", allLines.size(), CSV_RESOURCES.length);
 
+        log.info("Running V1 (Java) transform");
         List<String> v1 = runTransform(allLines, new ProcessFunctionJava());
+        log.info("V1 complete: {} output rows", v1.size());
         writeOutput(Paths.get("output", "v1", "sales_transformed.csv"), v1);
 
+        log.info("Running V2 (Python) transform");
         List<String> v2 = runTransform(allLines, new ProcessFunctionPython());
+        log.info("V2 complete: {} output rows", v2.size());
         writeOutput(Paths.get("output", "v2", "sales_transformed.csv"), v2);
 
-        System.out.println("Done. Output written to output/v1/ and output/v2/");
+        log.info("Done. Output written to output/v1/ and output/v2/");
     }
 
     static List<String> loadCsvLines() throws Exception {

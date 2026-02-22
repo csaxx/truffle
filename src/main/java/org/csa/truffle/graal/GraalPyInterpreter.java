@@ -5,6 +5,8 @@ import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.Value;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -20,6 +22,8 @@ import java.util.*;
  * reused across contexts.
  */
 public class GraalPyInterpreter implements AutoCloseable {
+
+    private static final Logger log = LoggerFactory.getLogger(GraalPyInterpreter.class);
 
     /**
      * Shared compilation engine — never closed; caches compiled ASTs across contexts.
@@ -38,6 +42,7 @@ public class GraalPyInterpreter implements AutoCloseable {
     public GraalPyInterpreter(PythonSource source) {
         this.source = source;
         source.setChangeListener(this::onSourceChanged);
+        log.debug("Initialized with source: {}", source.getClass().getSimpleName());
     }
 
     public long getGeneration() { return generation; }
@@ -75,6 +80,7 @@ public class GraalPyInterpreter implements AutoCloseable {
      */
     public synchronized boolean reload() throws IOException {
         List<String> currentNames = source.listFiles();
+        log.debug("Reload started; source lists {} file(s)", currentNames.size());
 
         // Read contents and compute hashes for all current files
         Map<String, String> currentContents = new LinkedHashMap<>();
@@ -95,13 +101,19 @@ public class GraalPyInterpreter implements AutoCloseable {
             fileContexts.remove(name).context().close();
             changed = true;
         }
+        if (!removed.isEmpty()) {
+            log.info("Removed {} Python file(s): {}", removed.size(), removed);
+        }
 
         // Add or replace contexts for new/changed files
         for (String name : currentNames) {
             String newHash = currentHashes.get(name);
             PythonFileContext existing = fileContexts.get(name);
             if (existing == null || !existing.hash().equals(newHash)) {
-                if (existing != null) {
+                if (existing == null) {
+                    log.info("Loading new Python file: {}", name);
+                } else {
+                    log.info("Reloading changed Python file: {}", name);
                     existing.context().close();
                 }
                 String code = currentContents.get(name);
@@ -113,6 +125,7 @@ public class GraalPyInterpreter implements AutoCloseable {
         }
 
         if (!changed) {
+            log.debug("Reload complete: no changes detected");
             return false;
         }
 
@@ -125,14 +138,16 @@ public class GraalPyInterpreter implements AutoCloseable {
         entries.forEach(e -> fileContexts.put(e.getKey(), e.getValue()));
 
         generation++;
+        log.debug("Reload complete: generation advanced to {}", generation);
         return true;
     }
 
     private void onSourceChanged() {
+        log.info("Source change detected; triggering auto-reload");
         try {
             reload();
         } catch (IOException e) {
-            System.err.println("[GraalPyInterpreter] Auto-reload failed: " + e.getMessage());
+            log.error("Auto-reload failed", e);
         }
     }
 
@@ -150,6 +165,7 @@ public class GraalPyInterpreter implements AutoCloseable {
 
     @Override
     public void close() {
+        log.debug("Closing interpreter: {} file context(s)", fileContexts.size());
         fileContexts.values().forEach(fc -> fc.context().close());
         try { source.close(); } catch (IOException ignored) {}
     }

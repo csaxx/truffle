@@ -1,6 +1,8 @@
 package org.csa.truffle.graal.source;
 
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
@@ -34,6 +36,8 @@ import java.util.List;
  */
 public class S3PythonSource implements PythonSource {
 
+    private static final Logger log = LoggerFactory.getLogger(S3PythonSource.class);
+
     private final S3Client s3;
     private final String bucket;
     private final String prefix; // never ends with '/', may be empty
@@ -43,6 +47,8 @@ public class S3PythonSource implements PythonSource {
         this.bucket = bucket;
         // Normalise: strip trailing slashes
         this.prefix = StringUtils.stripEnd(prefix, "/");
+        log.info("Initialized: bucket={}, prefix={}",
+                 bucket, this.prefix.isEmpty() ? "(root)" : this.prefix);
     }
 
     @Override

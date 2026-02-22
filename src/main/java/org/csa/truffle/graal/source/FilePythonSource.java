@@ -1,5 +1,8 @@
 package org.csa.truffle.graal.source;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -24,6 +27,7 @@ import java.util.List;
  */
 public class FilePythonSource implements PythonSource {
 
+    private static final Logger log = LoggerFactory.getLogger(FilePythonSource.class);
     private static final long DEBOUNCE_MS = 100;
 
     private final Path directory;
@@ -33,6 +37,7 @@ public class FilePythonSource implements PythonSource {
 
     public FilePythonSource(Path directory) {
         this.directory = directory;
+        log.debug("Monitoring directory: {}", directory);
     }
 
     @Override
@@ -54,6 +59,7 @@ public class FilePythonSource implements PythonSource {
     public synchronized void setChangeListener(Runnable onChanged) {
         if (watcherThread != null) return; // idempotent
         this.changeListener = onChanged;
+        log.info("Starting file watcher on: {}", directory);
         try {
             watchService = FileSystems.getDefault().newWatchService();
             directory.register(watchService,
@@ -61,12 +67,13 @@ public class FilePythonSource implements PythonSource {
                     StandardWatchEventKinds.ENTRY_MODIFY,
                     StandardWatchEventKinds.ENTRY_DELETE);
         } catch (IOException e) {
-            System.err.println("[FilePythonSource] Could not start watcher: " + e.getMessage());
+            log.error("Could not start file watcher: {}", e.getMessage());
             return;
         }
         watcherThread = new Thread(this::watchLoop, "FilePythonSource-watcher");
         watcherThread.setDaemon(true);
         watcherThread.start();
+        log.debug("Watcher thread started: {}", watcherThread.getName());
     }
 
     private void watchLoop() {
@@ -98,6 +105,7 @@ public class FilePythonSource implements PythonSource {
                     Thread.currentThread().interrupt();
                     return;
                 }
+                log.info("File system change detected in {}; invoking reload callback", directory);
                 Runnable listener = changeListener;
                 if (listener != null) listener.run();
             }
@@ -106,6 +114,7 @@ public class FilePythonSource implements PythonSource {
 
     @Override
     public void close() throws IOException {
+        log.debug("Closing file watcher for: {}", directory);
         if (watcherThread != null) watcherThread.interrupt();
         if (watchService != null) watchService.close();
     }
