@@ -1,4 +1,4 @@
-package org.csa.truffle.graal.source.resource;
+package org.csa.truffle.graal.source.git;
 
 import org.csa.truffle.graal.source.PythonSourceConfig;
 

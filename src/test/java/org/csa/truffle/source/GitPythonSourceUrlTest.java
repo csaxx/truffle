@@ -1,7 +1,7 @@
 package org.csa.truffle.source;
 
-import org.csa.truffle.graal.source.resource.GitForgeType;
-import org.csa.truffle.graal.source.resource.GitPythonSource;
+import org.csa.truffle.graal.source.git.GitForgeType;
+import org.csa.truffle.graal.source.git.GitPythonSource;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

@@ -1,4 +1,4 @@
-package org.csa.truffle.graal.source.resource;
+package org.csa.truffle.graal.source.git;
 
 import org.apache.commons.lang3.StringUtils;
 import org.csa.truffle.graal.source.PythonSource;

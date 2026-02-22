@@ -2,8 +2,8 @@ package org.csa.truffle.graal.source;
 
 import org.csa.truffle.graal.source.file.FilePythonSource;
 import org.csa.truffle.graal.source.file.FileSourceConfig;
-import org.csa.truffle.graal.source.resource.GitPythonSource;
-import org.csa.truffle.graal.source.resource.GitSourceConfig;
+import org.csa.truffle.graal.source.git.GitPythonSource;
+import org.csa.truffle.graal.source.git.GitSourceConfig;
 import org.csa.truffle.graal.source.resource.ResourcePythonSource;
 import org.csa.truffle.graal.source.resource.ResourceSourceConfig;
 import org.csa.truffle.graal.source.s3.S3PythonSource;
