@@ -2,7 +2,6 @@ package org.csa.truffle;
 
 import org.apache.flink.util.Collector;
 import org.csa.truffle.graal.GraalPyInterpreter;
-import org.csa.truffle.graal.source.PythonSource;
 import org.csa.truffle.graal.source.ResourcePythonSource;
 import org.junit.jupiter.api.Test;
 
@@ -26,19 +25,7 @@ class GraalPyInterpreterHotReloadTest {
         public void close() {}
     }
 
-    /**
-     * Delegates to a swappable {@link ResourcePythonSource} for hot-reload simulation.
-     * Single-threaded use only (no synchronization).
-     */
-    static class SwitchablePythonSource implements PythonSource {
-        private ResourcePythonSource current;
-        SwitchablePythonSource(String initial) { current = new ResourcePythonSource(initial); }
-        void switchTo(String dir) { current = new ResourcePythonSource(dir); }
-        @Override public List<String> listFiles() throws IOException { return current.listFiles(); }
-        @Override public String readFile(String name) throws IOException { return current.readFile(name); }
-    }
-
-    /** Invokes all loaded {@code process_element} functions for one input string. */
+/** Invokes all loaded {@code process_element} functions for one input string. */
     private static List<String> invokeAll(GraalPyInterpreter interp, String input) {
         TestCollector col = new TestCollector();
         interp.getMembers("process_element").forEach(fn -> fn.execute(input, col));

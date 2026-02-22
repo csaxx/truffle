@@ -32,12 +32,13 @@ public class FilePythonSource implements PythonSource {
 
     private final Path directory;
     private volatile Runnable changeListener;
+    private final boolean watch;
     private WatchService watchService;
     private Thread watcherThread;
 
-    public FilePythonSource(Path directory) {
+    public FilePythonSource(Path directory, boolean watch) {
         this.directory = directory;
-        log.debug("Monitoring directory: {}", directory);
+        this.watch = watch;
     }
 
     @Override
@@ -57,7 +58,7 @@ public class FilePythonSource implements PythonSource {
     /** Called once by GraalPyInterpreter. Starts the watcher thread. */
     @Override
     public synchronized void setChangeListener(Runnable onChanged) {
-        if (watcherThread != null) return; // idempotent
+        if (!watch || watcherThread != null) return; // idempotent
         this.changeListener = onChanged;
         log.info("Starting file watcher on: {}", directory);
         try {
