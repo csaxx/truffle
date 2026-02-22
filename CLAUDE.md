@@ -85,12 +85,40 @@ load, in execution order. Lines starting with `#` and blank lines are ignored.
 Files are resolved as classpath resources under `python/`.
 
 **PythonSource abstraction.** `GraalPyInterpreter` does not load files directly.
-Instead it accepts a `PythonSource` on construction, an interface with two methods:
-`listFiles()` (returns the ordered filename list) and `readFile(name)` (returns file
-content). `reload()` is a no-arg method that queries the injected source.
-The production implementation is `ResourcePythonSource`, which reads from a classpath
-directory via `index.txt`. Alternative implementations can load scripts from the
-filesystem, a database, or an in-memory map without changing `GraalPyInterpreter`.
+It accepts a `PythonSource` (in `org.csa.truffle.graal.source`) at construction time.
+The interface has two methods: `listFiles()` returns the ordered filename list;
+`readFile(name)` returns file content. `reload()` is no-arg and queries the injected source.
+Two implementations ship with the project:
+
+| Implementation | Source | Constructor |
+|----------------|--------|-------------|
+| `ResourcePythonSource` | Classpath resources (JAR) | `new ResourcePythonSource("python")` |
+| `GitPythonSource` | GitHub / GitLab via HTTP | `new GitPythonSource(url, dir, branch, token)` |
+| `S3PythonSource` | AWS S3 / MinIO | `new S3PythonSource(s3Client, bucket, prefix)` |
+
+**`ResourcePythonSource`** reads `{directory}/index.txt` from the classpath, then loads
+each listed `.py` file from `{directory}/{name}`. Used in production by
+`ProcessFunctionPython` and in tests via `SwitchablePythonSource`.
+
+**`GitPythonSource`** fetches `{directory}/index.txt` and each listed file directly from
+a Git repository via raw-content HTTP — no clone required. Auto-detects the provider:
+- **GitHub** (`github.com`): `https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{directory}/{file}`
+- **GitLab** (any other host): `https://{host}/{path}/-/raw/{branch}/{directory}/{file}`
+
+Authentication: pass a personal access token (GitHub PAT or GitLab PAT) as the `token`
+argument; pass `null` for public repositories. The token is sent as
+`Authorization: Bearer {token}`.
+
+**`S3PythonSource`** reads `{prefix}/index.txt` and each listed file as S3 objects via
+the AWS SDK v2 `S3Client`. The client is injected by the caller, keeping credential and
+endpoint wiring out of the class:
+- **AWS S3**: `S3Client.create()` (uses default credential chain and region).
+- **MinIO**: build with `.endpointOverride(...)`, `.forcePathStyle(true)`, and explicit
+  `credentialsProvider`. MinIO accepts any region string.
+An empty `prefix` fetches objects directly from the bucket root.
+
+**Adding a new `PythonSource`.** Implement `listFiles()` and `readFile(name)` and pass
+an instance to `new GraalPyInterpreter(source)`. No other changes needed.
 
 **`getMembers(String memberName)`** streams over all file contexts in index order and
 returns a `List<Value>` — one entry per file — for the named Python binding. The caller
