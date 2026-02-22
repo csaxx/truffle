@@ -88,6 +88,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
 
     @Override
     public void processElement(String line, Context ctx, Collector<String> out) {
+        reloader.checkForFatalError();
         long gen = interpreter.getGeneration();
         if (gen != lastGeneration) {
             pyProcessElements = interpreter.getNamedMembers("process_element");

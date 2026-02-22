@@ -200,9 +200,14 @@ to emit output rows.
 ### Scheduled reload
 
 **`SchedulerConfig`** (`src/main/java/org/csa/truffle/graal/reload/SchedulerConfig.java`)
-is a `Serializable` record with a single `Duration interval` component. Passing a config
-object (rather than a raw `Duration`) to `ProcessFunctionPython` mirrors the `PythonSourceConfig`
-pattern and ensures the value survives Flink serialization across distributed operators.
+is a `Serializable` record with two components: `Duration interval` and `Duration gracePeriod`.
+Passing a config object (rather than a raw `Duration`) to `ProcessFunctionPython` mirrors the
+`PythonSourceConfig` pattern and ensures the value survives Flink serialization across distributed
+operators. The single-arg constructor `SchedulerConfig(interval)` defaults `gracePeriod` to
+`Duration.ZERO`, which means reload errors are tolerated indefinitely (logged but never fatal).
+When `gracePeriod` is positive, background reload failures that persist longer than the grace
+period cause `ScheduledReloader` to store a fatal `RuntimeException`; `ProcessFunctionPython`
+checks for it at the top of every `processElement()` call and re-throws it, failing the Flink task.
 
 **`ReloadResult`** (`src/main/java/org/csa/truffle/graal/reload/ReloadResult.java`)
 is the return type of `GraalPyInterpreter.reload()`. It bundles:
@@ -223,6 +228,14 @@ wraps a `GraalPyInterpreter` and drives periodic polling:
     first `start()`.
   - `lastErrorAt` / `lastError` — set (and never cleared) when a reload throws `IOException`;
     `null` if no error has occurred.
+  - `firstErrorAt` — start of the current error streak; cleared (`null`) when a reload succeeds.
+  - `fatalError` — set once when the grace period is exceeded; never cleared.
+- When `config.gracePeriod()` is positive and background reloads keep failing, `doReloadQuietly()`
+  tracks the streak start in `firstErrorAt`. Once `Duration.between(firstErrorAt, now) >= gracePeriod`,
+  it stores a descriptive `RuntimeException` in `fatalError`.
+- `checkForFatalError()` — throws the stored `fatalError` if set; no-op otherwise. Called by
+  `ProcessFunctionPython.processElement()` on every record to propagate the failure into Flink.
+- `getFirstErrorAt()` — returns the start of the current error streak, or `null` if no streak.
 - `close()` calls `executor.shutdownNow()`. Always close via try-with-resources or via
   `ProcessFunctionPython.close()`, which calls both `reloader.close()` and `interpreter.close()`.
 
