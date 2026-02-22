@@ -1,5 +1,6 @@
 package org.csa.truffle.graal;
 
+import org.csa.truffle.graal.source.PythonSource;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Source;
@@ -32,7 +33,7 @@ public class GraalPyInterpreter implements AutoCloseable {
     /**
      * Maps filename to GraalPy context.
      */
-    private final HashMap<String, PythonFileContext> fileContexts = new LinkedHashMap<>();
+    private final HashMap<String, GraalPyContext> fileContexts = new LinkedHashMap<>();
 
     private final PythonSource source;
 
@@ -122,7 +123,7 @@ public class GraalPyInterpreter implements AutoCloseable {
         // Add or replace contexts for new/changed files
         for (String name : currentNames) {
             String newHash = currentHashes.get(name);
-            PythonFileContext existing = fileContexts.get(name);
+            GraalPyContext existing = fileContexts.get(name);
             if (existing == null || !existing.hash().equals(newHash)) {
                 if (existing == null) {
                     log.info("Loading new Python file: {}", name);
@@ -133,7 +134,7 @@ public class GraalPyInterpreter implements AutoCloseable {
                 String code = currentContents.get(name);
                 Context ctx = createContext();
                 ctx.eval(Source.newBuilder("python", code, name).build());
-                fileContexts.put(name, new PythonFileContext(ctx, name, newHash));
+                fileContexts.put(name, new GraalPyContext(ctx, name, newHash));
                 changed = true;
             }
         }
@@ -144,7 +145,7 @@ public class GraalPyInterpreter implements AutoCloseable {
         }
 
         // Rebuild map in currentNames order (LinkedHashMap re-insertion)
-        List<Map.Entry<String, PythonFileContext>> entries = currentNames.stream()
+        List<Map.Entry<String, GraalPyContext>> entries = currentNames.stream()
                 .filter(fileContexts::containsKey)
                 .map(name -> Map.entry(name, fileContexts.get(name)))
                 .toList();

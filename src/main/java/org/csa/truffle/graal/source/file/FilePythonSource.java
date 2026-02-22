@@ -1,6 +1,6 @@
-package org.csa.truffle.graal.source;
+package org.csa.truffle.graal.source.file;
 
-import org.csa.truffle.graal.PythonSource;
+import org.csa.truffle.graal.source.PythonSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

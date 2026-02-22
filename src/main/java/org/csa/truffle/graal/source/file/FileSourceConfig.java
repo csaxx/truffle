@@ -1,4 +1,6 @@
-package org.csa.truffle.graal.source;
+package org.csa.truffle.graal.source.file;
+
+import org.csa.truffle.graal.source.PythonSourceConfig;
 
 /**
  * @param directory absolute path to the local directory

@@ -1,6 +1,13 @@
-package org.csa.truffle.graal;
+package org.csa.truffle.graal.source;
 
-import org.csa.truffle.graal.source.*;
+import org.csa.truffle.graal.source.file.FilePythonSource;
+import org.csa.truffle.graal.source.file.FileSourceConfig;
+import org.csa.truffle.graal.source.resource.GitPythonSource;
+import org.csa.truffle.graal.source.resource.GitSourceConfig;
+import org.csa.truffle.graal.source.resource.ResourcePythonSource;
+import org.csa.truffle.graal.source.resource.ResourceSourceConfig;
+import org.csa.truffle.graal.source.s3.S3PythonSource;
+import org.csa.truffle.graal.source.s3.S3SourceConfig;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
@@ -36,6 +43,7 @@ public final class PythonSourceFactory {
                             AwsBasicCredentials.create(c.accessKeyId(), c.secretKey())));
                 yield new S3PythonSource(b.build(), c.bucket(), c.prefix());
             }
+            default -> throw new IllegalArgumentException("Unknown PythonSourceConfig type: " + config.getClass().getName());
         };
     }
 }

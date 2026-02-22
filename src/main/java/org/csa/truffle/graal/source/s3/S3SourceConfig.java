@@ -1,4 +1,6 @@
-package org.csa.truffle.graal.source;
+package org.csa.truffle.graal.source.s3;
+
+import org.csa.truffle.graal.source.PythonSourceConfig;
 
 /**
  * @param bucket      S3 bucket name

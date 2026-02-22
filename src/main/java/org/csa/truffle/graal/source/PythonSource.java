@@ -1,6 +1,7 @@
-package org.csa.truffle.graal;
+package org.csa.truffle.graal.source;
 
-import org.csa.truffle.graal.source.FilePythonSource;
+import org.csa.truffle.graal.GraalPyInterpreter;
+import org.csa.truffle.graal.source.file.FilePythonSource;
 
 import java.io.Closeable;
 import java.io.IOException;

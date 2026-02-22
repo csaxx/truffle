@@ -14,9 +14,12 @@ run_job.bat compile
 rem Run tests
 run_job.bat test
 
-rem Run the job (writes output/v1/ and output/v2/)
+rem Run the job (writes output/java/ and output/python/)
 rem exec:exec spawns a child JVM so Flink 2.x classloader isolation works correctly.
 run_job.bat exec
+
+rem exec-git loads files from Git repo instead of resource dir.
+run_job.bat exec-git
 
 rem Build a fat JAR for cluster submission
 run_job.bat package -DskipTests
@@ -88,51 +91,64 @@ Files are resolved as classpath resources under `python/`.
 It accepts a `PythonSource` (in `org.csa.truffle.graal.source`) at construction time.
 The interface has two methods: `listFiles()` returns the ordered filename list;
 `readFile(name)` returns file content. `reload()` is no-arg and queries the injected source.
-Two implementations ship with the project:
+Four implementations ship with the project, split into subpackages:
 
-| Implementation | Source | Constructor |
-|----------------|--------|-------------|
-| `ResourcePythonSource` | Classpath resources (JAR) | `new ResourcePythonSource("python")` |
-| `GitPythonSource` | GitHub / GitLab via HTTP | `new GitPythonSource(url, dir, branch, token)` |
-| `S3PythonSource` | AWS S3 / MinIO | `new S3PythonSource(s3Client, bucket, prefix)` |
-| `FilePythonSource` | Local filesystem + WatchService | `new FilePythonSource(Path.of("/opt/scripts"))` |
+| Implementation (package) | Source | Config record |
+|--------------------------|--------|---------------|
+| `resource.ResourcePythonSource` | Classpath JAR | `new ResourceSourceConfig("python")` |
+| `resource.GitPythonSource` | GitHub / GitLab / Gitea via HTTP | `new GitSourceConfig(url, dir, branch, token, forge)` |
+| `s3.S3PythonSource` | AWS S3 / MinIO | `new S3SourceConfig(...)` or static helpers |
+| `file.FilePythonSource` | Local filesystem + WatchService | `new FileSourceConfig(path, watch)` |
 
-**`ResourcePythonSource`** reads `{directory}/index.txt` from the classpath, then loads
-each listed `.py` file from `{directory}/{name}`. Used in production by
+**Config records and `PythonSourceFactory`.** `PythonSourceConfig` is a marker interface
+(in `org.csa.truffle.graal.source`) extended by the four config record types above. All
+record components are primitives, Strings, or enums — serialization is guaranteed.
+`PythonSourceFactory.create(PythonSourceConfig)` is a `final class` with a static factory
+method; it uses a `switch` on the concrete type to instantiate the correct `PythonSource`. S3 credential
+wiring and `Path` conversion live here, keeping the source classes free of construction
+details. `ProcessFunctionPython` stores a `PythonSourceConfig` (not a lambda); `open()`
+calls the factory to build the source. The default constructor uses
+`new ResourceSourceConfig("python")`.
+
+**`resource.ResourcePythonSource`** reads `{directory}/index.txt` from the classpath, then
+loads each listed `.py` file from `{directory}/{name}`. Used in production by
 `ProcessFunctionPython` and in tests via `SwitchablePythonSource`.
 
-**`GitPythonSource`** fetches `{directory}/index.txt` and each listed file directly from
-a Git repository via raw-content HTTP — no clone required. Auto-detects the provider:
+**`resource.GitPythonSource`** fetches `{directory}/index.txt` and each listed file
+directly from a Git repository via raw-content HTTP — no clone required. The forge is
+identified by `GitForgeType` (GITHUB, GITLAB, GITEA/Forgejo); pass `null` in
+`GitSourceConfig` to auto-detect from the URL:
 - **GitHub** (`github.com`): `https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{directory}/{file}`
-- **GitLab** (any other host): `https://{host}/{path}/-/raw/{branch}/{directory}/{file}`
+- **GitLab** (other hosts): `https://{host}/{path}/-/raw/{branch}/{directory}/{file}`
+- **Gitea / Forgejo**: `https://{host}/{path}/raw/branch/{branch}/{directory}/{file}`
 
-Authentication: pass a personal access token (GitHub PAT or GitLab PAT) as the `token`
-argument; pass `null` for public repositories. The token is sent as
-`Authorization: Bearer {token}`.
+Authentication: set `token` in `GitSourceConfig`; pass `null` for public repositories.
+The token is sent as `Authorization: Bearer {token}`.
 
-**`S3PythonSource`** reads `{prefix}/index.txt` and each listed file as S3 objects via
-the AWS SDK v2 `S3Client`. The client is injected by the caller, keeping credential and
-endpoint wiring out of the class:
-- **AWS S3**: `S3Client.create()` (uses default credential chain and region).
-- **MinIO**: build with `.endpointOverride(...)`, `.forcePathStyle(true)`, and explicit
-  `credentialsProvider`. MinIO accepts any region string.
+**`s3.S3PythonSource`** reads `{prefix}/index.txt` and each listed file as S3 objects via
+the AWS SDK v2 `S3Client`. `S3SourceConfig` has two static helpers:
+- `S3SourceConfig.forAws(bucket, prefix)` — AWS S3 with the default credential chain.
+- `S3SourceConfig.forMinio(endpoint, bucket, prefix, accessKeyId, secretKey)` — MinIO /
+  custom endpoint with explicit credentials.
 An empty `prefix` fetches objects directly from the bucket root.
+`PythonSourceFactory` builds the `S3Client` from config fields; callers need not touch
+the AWS SDK directly.
 
-**`FilePythonSource`** reads `index.txt` and `.py` files from a local directory using
-`Files.readString`. It implements the push-notification protocol: `setChangeListener`
-starts a daemon `WatchService` thread that monitors the directory for `ENTRY_CREATE`,
-`ENTRY_MODIFY`, and `ENTRY_DELETE` events. When a `.py` file or `index.txt` changes, the
-watcher debounces 100 ms then calls the registered callback, which triggers
-`GraalPyInterpreter.reload()` automatically — no manual polling needed.
-Call `close()` (or use try-with-resources) to stop the watcher thread.
+**`file.FilePythonSource`** reads `index.txt` and `.py` files from a local directory using
+`Files.readString`. The `watch` boolean in `FileSourceConfig` controls whether it starts
+a `WatchService` thread. When watching, `setChangeListener` starts a daemon thread that
+monitors the directory for `ENTRY_CREATE`, `ENTRY_MODIFY`, and `ENTRY_DELETE` events.
+When a `.py` file or `index.txt` changes, the watcher debounces 100 ms then calls the
+registered callback, which triggers `GraalPyInterpreter.reload()` automatically — no
+manual polling needed. Call `close()` (or use try-with-resources) to stop the watcher thread.
 
-**Push-notification protocol** (`setChangeListener`). `PythonSource` now extends
-`Closeable` and has two default methods: `setChangeListener(Runnable onChanged)` (no-op)
-and `close()` (no-op). `GraalPyInterpreter` calls `setChangeListener` in its constructor,
-passing a callback that invokes `reload()`. Sources that can detect changes (`FilePythonSource`)
+**Push-notification protocol** (`setChangeListener`). `PythonSource` extends `Closeable`
+and has two default methods: `setChangeListener(Runnable onChanged)` (no-op) and `close()`
+(no-op). `GraalPyInterpreter` calls `setChangeListener` in its constructor, passing a
+callback that invokes `reload()`. Sources that can detect changes (`FilePythonSource`)
 override `setChangeListener` to start a watcher; pull-only sources (`ResourcePythonSource`,
 `GitPythonSource`, `S3PythonSource`) inherit the no-op default and remain unchanged.
-`GraalPyInterpreter.close()` now also calls `source.close()` to stop any watcher thread.
+`GraalPyInterpreter.close()` also calls `source.close()` to stop any watcher thread.
 
 **Generation counter.** `GraalPyInterpreter` exposes `getGeneration()` — a `volatile long`
 incremented on every successful reload that detected changes. `ProcessFunctionPython`
@@ -140,8 +156,11 @@ caches `lastGeneration` and lazily refreshes its `Value` references at the top o
 `processElement` when the generation has advanced, avoiding stale references to closed
 Python contexts after a background reload.
 
-**Adding a new `PythonSource`.** Implement `listFiles()` and `readFile(name)` and pass
-an instance to `new GraalPyInterpreter(source)`. No other changes needed.
+**Adding a new `PythonSource`.** Implement `listFiles()` and `readFile(name)` in a new
+class (place it in an appropriate `graal/source/` subpackage). Also create a config
+record implementing `PythonSourceConfig`, add a corresponding `case` to
+`PythonSourceFactory.create()`, and pass the config to
+`new ProcessFunctionPython(yourConfig)`. No other changes needed.
 
 **`getMembers(String memberName)`** streams over all file contexts in index order and
 returns a `List<Value>` — one entry per file — for the named Python binding. The caller

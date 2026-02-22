@@ -1,4 +1,4 @@
-package org.csa.truffle.graal.source;
+package org.csa.truffle.graal.source.resource;
 
 /**
  * Identifies the Git forge type so {@link GitPythonSource} can build

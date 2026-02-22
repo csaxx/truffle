@@ -1,7 +1,7 @@
 package org.csa.truffle;
 
-import org.csa.truffle.graal.PythonSource;
-import org.csa.truffle.graal.source.ResourcePythonSource;
+import org.csa.truffle.graal.source.PythonSource;
+import org.csa.truffle.graal.source.resource.ResourcePythonSource;
 
 import java.io.IOException;
 import java.util.List;

@@ -1,4 +1,6 @@
-package org.csa.truffle.graal.source;
+package org.csa.truffle.graal.source.resource;
+
+import org.csa.truffle.graal.source.PythonSourceConfig;
 
 /**
  * @param repoUrl   e.g. {@code https://github.com/owner/repo}

@@ -3,7 +3,7 @@ package org.csa.truffle.reload;
 import org.apache.flink.util.Collector;
 import org.csa.truffle.SwitchablePythonSource;
 import org.csa.truffle.graal.GraalPyInterpreter;
-import org.csa.truffle.graal.source.ResourcePythonSource;
+import org.csa.truffle.graal.source.resource.ResourcePythonSource;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
