@@ -1,6 +1,7 @@
 package org.csa.truffle;
 
 import org.csa.truffle.function.ProcessFunctionPython;
+import org.csa.truffle.graal.reload.SchedulerConfig;
 import org.csa.truffle.graal.source.resource.GitSourceConfig;
 import org.csa.truffle.graal.source.resource.GitPythonSource;
 import org.slf4j.Logger;
@@ -37,7 +38,7 @@ public class TruffleJobGit {
         log.info("Running V3 (Python + Git source) transform");
         List<String> v3 = TruffleJob.runTransform(
                 allLines,
-                new ProcessFunctionPython(Duration.ofMinutes(5), gitConfig)
+                new ProcessFunctionPython(new SchedulerConfig(Duration.ofMinutes(5)), gitConfig)
         );
         log.info("V3 complete: {} output rows", v3.size());
         TruffleJob.writeOutput(Paths.get("output", "v3", "sales_transformed.csv"), v3);

@@ -11,7 +11,9 @@ import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * {@link PythonSource} that loads Python files from an S3-compatible object store.
@@ -63,6 +65,21 @@ public class S3PythonSource implements PythonSource {
     @Override
     public String readFile(String name) throws IOException {
         return getObject(name);
+    }
+
+    @Override
+    public Optional<Instant> getDataAge() throws IOException {
+        Instant latest = null;
+        try {
+            for (String name : listFiles()) {
+                String key = prefix.isEmpty() ? name : prefix + "/" + name;
+                Instant t = s3.headObject(r -> r.bucket(bucket).key(key)).lastModified();
+                if (t != null && (latest == null || t.isAfter(latest))) latest = t;
+            }
+        } catch (S3Exception e) {
+            throw new IOException("S3 error fetching data age: " + e.getMessage(), e);
+        }
+        return Optional.ofNullable(latest);
     }
 
     private String getObject(String name) throws IOException {

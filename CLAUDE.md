@@ -91,6 +91,13 @@ Files are resolved as classpath resources under `python/`.
 It accepts a `PythonSource` (in `org.csa.truffle.graal.source`) at construction time.
 The interface has two methods: `listFiles()` returns the ordered filename list;
 `readFile(name)` returns file content. `reload()` is no-arg and queries the injected source.
+`getDataAge()` returns `Optional<Instant>` — the latest modification timestamp
+across all currently listed files, or `Optional.empty()` if the source cannot
+determine this. Called by `GraalPyInterpreter` at the end of every reload to
+populate `ReloadResult.dataAge()`. `FilePythonSource` implements it via
+`Files.getLastModifiedTime()`; `S3PythonSource` via `HeadObjectRequest`
+(metadata-only, no download). `ResourcePythonSource` and `GitPythonSource`
+inherit the no-op default.
 Four implementations ship with the project, split into subpackages:
 
 | Implementation (package) | Source | Config record |
@@ -161,6 +168,10 @@ class (place it in an appropriate `graal/source/` subpackage). Also create a con
 record implementing `PythonSourceConfig`, add a corresponding `case` to
 `PythonSourceFactory.create()`, and pass the config to
 `new ProcessFunctionPython(yourConfig)`. No other changes needed.
+If your source can efficiently retrieve file modification times (e.g. a database column
+or object-store `HeadObject`), also override `getDataAge()` to return
+`Optional.of(latestInstant)`. Otherwise inherit the no-op default, which causes
+`ReloadResult.dataAge()` to be empty for that source.
 
 **`getMembers(String memberName)`** streams over all file contexts in index order and
 returns a `List<Value>` — one entry per file — for the named Python binding. The caller
@@ -172,13 +183,53 @@ content, and reconciles:
 - New or changed files → old `Context` closed (if any), new `Context` created and
   evaluated. The engine cache means unchanged peer files pay no recompile cost.
 - Unchanged files → their `Context` is reused as-is.
-Returns `true` if anything changed so the caller can re-fetch its `Value` references.
+Returns a `ReloadResult` record with three fields:
+- `changed` — `true` if any file was added, removed, or changed.
+- `reloadedAt` — the `Instant` captured at the top of the reload, before any I/O.
+- `dataAge` — `Optional<Instant>` from `PythonSource.getDataAge()` — the latest
+  file mtime across all loaded files; empty for JAR/Git sources.
+
+Callers use `result.changed()` to decide whether to re-fetch `Value` references.
 
 **Adding a new Python transform file.** Create the `.py` file under
 `src/main/resources/python/` with a `process_element(line, out)` function, then add
 its filename to `python/index.txt`. No Java changes are required. The function receives
 the raw CSV line as a string and the Flink `Collector<String>`; call `out.collect(...)`
 to emit output rows.
+
+### Scheduled reload
+
+**`SchedulerConfig`** (`src/main/java/org/csa/truffle/graal/reload/SchedulerConfig.java`)
+is a `Serializable` record with a single `Duration interval` component. Passing a config
+object (rather than a raw `Duration`) to `ProcessFunctionPython` mirrors the `PythonSourceConfig`
+pattern and ensures the value survives Flink serialization across distributed operators.
+
+**`ReloadResult`** (`src/main/java/org/csa/truffle/graal/reload/ReloadResult.java`)
+is the return type of `GraalPyInterpreter.reload()`. It bundles:
+- `changed` (`boolean`) — whether any file changed during this reload.
+- `reloadedAt` (`Instant`) — wall-clock time captured at the start of the reload call.
+- `dataAge` (`Optional<Instant>`) — latest file mtime from `PythonSource.getDataAge()`;
+  empty for JAR-classpath and Git HTTP sources.
+
+**`ScheduledReloader`** (`src/main/java/org/csa/truffle/graal/reload/ScheduledReloader.java`)
+wraps a `GraalPyInterpreter` and drives periodic polling:
+- `start()` performs an initial **synchronous** reload on the calling thread (guaranteeing
+  data is ready before Flink calls `processElement`), then schedules background reloads via
+  a single-daemon-thread `ScheduledExecutorService` at `config.interval()`.
+- All observable state is `volatile` (immutable `Instant` / record writes are safe):
+  - `lastCheckedAt` — set on every reload (changed or not).
+  - `lastChangedAt` — set only when `ReloadResult.changed()` is `true`.
+  - `lastResult` — the full `ReloadResult` from the most recent reload cycle; `null` until
+    first `start()`.
+  - `lastErrorAt` / `lastError` — set (and never cleared) when a reload throws `IOException`;
+    `null` if no error has occurred.
+- `close()` calls `executor.shutdownNow()`. Always close via try-with-resources or via
+  `ProcessFunctionPython.close()`, which calls both `reloader.close()` and `interpreter.close()`.
+
+**`ProcessFunctionPython` constructors:**
+- `()` — defaults to `new SchedulerConfig(Duration.ofMinutes(5))` + classpath `python/` dir.
+- `(Duration interval)` — convenience overload; wraps in `SchedulerConfig`.
+- `(SchedulerConfig schedulerConfig, PythonSourceConfig sourceConfig)` — primary constructor.
 
 ### Adding a new ProcessFunction
 

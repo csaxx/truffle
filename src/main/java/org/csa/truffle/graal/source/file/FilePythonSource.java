@@ -7,7 +7,9 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * {@link PythonSource} that reads Python files from a local directory and
@@ -53,6 +55,16 @@ public class FilePythonSource implements PythonSource {
     @Override
     public String readFile(String name) throws IOException {
         return Files.readString(directory.resolve(name), StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public Optional<Instant> getDataAge() throws IOException {
+        Instant latest = null;
+        for (String name : listFiles()) {
+            Instant t = Files.getLastModifiedTime(directory.resolve(name)).toInstant();
+            if (latest == null || t.isAfter(latest)) latest = t;
+        }
+        return Optional.ofNullable(latest);
     }
 
     /**

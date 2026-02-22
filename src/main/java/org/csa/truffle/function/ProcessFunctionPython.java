@@ -4,9 +4,11 @@ import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.Collector;
 import org.csa.truffle.graal.GraalPyInterpreter;
-import org.csa.truffle.graal.source.PythonSourceFactory;
+import org.csa.truffle.graal.reload.ReloadResult;
 import org.csa.truffle.graal.reload.ScheduledReloader;
+import org.csa.truffle.graal.reload.SchedulerConfig;
 import org.csa.truffle.graal.source.PythonSourceConfig;
+import org.csa.truffle.graal.source.PythonSourceFactory;
 import org.csa.truffle.graal.source.resource.ResourceSourceConfig;
 import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Value;
@@ -32,7 +34,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
 
     private static final Logger log = LoggerFactory.getLogger(ProcessFunctionPython.class);
 
-    private final Duration reloadInterval;
+    private final SchedulerConfig schedulerConfig;
     private final PythonSourceConfig sourceConfig;
 
     private transient GraalPyInterpreter interpreter;
@@ -41,15 +43,15 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
     private transient long lastGeneration = -1;
 
     public ProcessFunctionPython() {
-        this(Duration.ofMinutes(5), new ResourceSourceConfig("python"));
+        this(new SchedulerConfig(Duration.ofMinutes(5)), new ResourceSourceConfig("python"));
     }
 
-    public ProcessFunctionPython(Duration reloadInterval) {
-        this(reloadInterval, new ResourceSourceConfig("python"));
+    public ProcessFunctionPython(Duration interval) {
+        this(new SchedulerConfig(interval), new ResourceSourceConfig("python"));
     }
 
-    public ProcessFunctionPython(Duration reloadInterval, PythonSourceConfig sourceConfig) {
-        this.reloadInterval = reloadInterval;
+    public ProcessFunctionPython(SchedulerConfig schedulerConfig, PythonSourceConfig sourceConfig) {
+        this.schedulerConfig = schedulerConfig;
         this.sourceConfig = sourceConfig;
     }
 
@@ -57,7 +59,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
     public void open(OpenContext openContext) throws Exception {
         log.info("Opening: loading Python scripts from classpath 'python/' directory");
         interpreter = new GraalPyInterpreter(PythonSourceFactory.create(sourceConfig));
-        reloader = new ScheduledReloader(interpreter, reloadInterval);
+        reloader = new ScheduledReloader(interpreter, schedulerConfig);
         reloader.start();   // synchronous initial reload + schedules background reloads
         pyProcessElements = interpreter.getNamedMembers("process_element");
         lastGeneration = interpreter.getGeneration();
@@ -76,7 +78,8 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
      */
     public void reload() throws IOException {
         log.info("Manual hot-reload triggered");
-        if (interpreter.reload()) {
+        ReloadResult r = interpreter.reload();
+        if (r.changed()) {
             log.info("Manual hot-reload complete: data changed");
         } else {
             log.debug("Manual hot-reload: no changes detected");

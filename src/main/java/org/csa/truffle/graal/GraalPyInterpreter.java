@@ -1,5 +1,6 @@
 package org.csa.truffle.graal;
 
+import org.csa.truffle.graal.reload.ReloadResult;
 import org.csa.truffle.graal.source.PythonSource;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
@@ -12,6 +13,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.*;
 
 /**
@@ -90,10 +92,11 @@ public class GraalPyInterpreter implements AutoCloseable {
      * Queries the injected {@link PythonSource} and reconciles per-file contexts:
      * removed files get their Context closed, new/changed files get a fresh Context.
      *
-     * @return {@code true} if anything changed (caller must re-fetch Value refs);
-     * {@code false} if nothing changed.
+     * @return a {@link ReloadResult} bundling whether anything changed, the reload
+     * timestamp, and the latest file modification age from the source.
      */
-    public synchronized boolean reload() throws IOException {
+    public synchronized ReloadResult reload() throws IOException {
+        Instant now = Instant.now();
         List<String> currentNames = source.listFiles();
         log.debug("Reload started; source lists {} file(s)", currentNames.size());
 
@@ -141,7 +144,7 @@ public class GraalPyInterpreter implements AutoCloseable {
 
         if (!changed) {
             log.debug("Reload complete: no changes detected");
-            return false;
+            return new ReloadResult(false, now, source.getDataAge());
         }
 
         // Rebuild map in currentNames order (LinkedHashMap re-insertion)
@@ -154,13 +157,13 @@ public class GraalPyInterpreter implements AutoCloseable {
 
         generation++;
         log.debug("Reload complete: generation advanced to {}", generation);
-        return true;
+        return new ReloadResult(true, now, source.getDataAge());
     }
 
     private void onSourceChanged() {
         log.info("Source change detected; triggering auto-reload");
         try {
-            reload();
+            reload(); // generation counter drives staleness; result unused here
         } catch (IOException e) {
             log.error("Auto-reload failed", e);
         }

@@ -3,6 +3,7 @@ package org.csa.truffle.reload;
 import org.csa.truffle.SwitchablePythonSource;
 import org.csa.truffle.graal.GraalPyInterpreter;
 import org.csa.truffle.graal.reload.ScheduledReloader;
+import org.csa.truffle.graal.reload.SchedulerConfig;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -12,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ScheduledReloaderTest {
 
-    private static final Duration INTERVAL = Duration.ofMillis(50);
+    private static final SchedulerConfig INTERVAL = new SchedulerConfig(Duration.ofMillis(50));
 
     private GraalPyInterpreter newInterpreter(String dir) {
         return new GraalPyInterpreter(new SwitchablePythonSource(dir));
@@ -44,7 +45,7 @@ class ScheduledReloaderTest {
         try (GraalPyInterpreter interp = new GraalPyInterpreter(src)) {
             interp.reload();   // prime the cache
             // Now create reloader — start() will call reload() again but nothing changed
-            try (ScheduledReloader reloader = new ScheduledReloader(interp, Duration.ofSeconds(60))) {
+            try (ScheduledReloader reloader = new ScheduledReloader(interp, new SchedulerConfig(Duration.ofSeconds(60)))) {
                 reloader.start();
                 assertNull(reloader.getLastChangedAt(),
                         "lastChangedAt should remain null when reload detects no changes");
@@ -59,7 +60,7 @@ class ScheduledReloaderTest {
             reloader.start();
             Instant after = reloader.getLastCheckedAt();
             // Wait long enough for at least one background tick
-            Thread.sleep(INTERVAL.toMillis() * 3);
+            Thread.sleep(INTERVAL.interval().toMillis() * 3);
             Instant later = reloader.getLastCheckedAt();
             assertNotNull(later);
             assertTrue(later.isAfter(after),
@@ -76,7 +77,7 @@ class ScheduledReloaderTest {
         interp.close();
 
         Instant afterClose = reloader.getLastCheckedAt();
-        Thread.sleep(INTERVAL.toMillis() * 3);
+        Thread.sleep(INTERVAL.interval().toMillis() * 3);
         Instant stillSame = reloader.getLastCheckedAt();
 
         assertEquals(afterClose, stillSame,

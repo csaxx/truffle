@@ -5,7 +5,9 @@ import org.csa.truffle.graal.source.file.FilePythonSource;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Provides the file list and contents for {@link GraalPyInterpreter}.
@@ -23,6 +25,16 @@ public interface PythonSource extends Closeable {
      * Returns the source code of the named file.
      */
     String readFile(String name) throws IOException;
+
+    /**
+     * Returns the most recent modification timestamp across all currently listed files,
+     * or {@link Optional#empty()} if the source cannot determine this.
+     * Called by {@link GraalPyInterpreter} at the end of each reload to populate
+     * {@link org.csa.truffle.graal.reload.ReloadResult#dataAge()}.
+     */
+    default Optional<Instant> getDataAge() throws IOException {
+        return Optional.empty();
+    }
 
     /**
      * Called once by {@link GraalPyInterpreter} after construction.

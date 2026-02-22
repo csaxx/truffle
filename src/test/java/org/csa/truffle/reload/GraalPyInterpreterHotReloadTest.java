@@ -185,7 +185,7 @@ class GraalPyInterpreterHotReloadTest {
         try (GraalPyInterpreter interp = new GraalPyInterpreter(src)) {
             interp.reload();
             src.switchTo("python_hr_v2");
-            assertTrue(interp.reload());
+            assertTrue(interp.reload().changed());
         }
     }
 
@@ -194,7 +194,7 @@ class GraalPyInterpreterHotReloadTest {
         SwitchablePythonSource src = new SwitchablePythonSource("python_hr_v1");
         try (GraalPyInterpreter interp = new GraalPyInterpreter(src)) {
             interp.reload();
-            assertFalse(interp.reload());
+            assertFalse(interp.reload().changed());
         }
     }
 }
