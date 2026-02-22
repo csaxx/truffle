@@ -27,12 +27,31 @@ run_job.bat package -DskipTests
 
 ### Environment notes (Windows)
 
-- **`mvn` is not on PATH** — use `run_job.bat` or the full path:
-  `C:\Users\csa\.m2\wrapper\dists\apache-maven-3.6.3-bin\1iopthnavndlasol9gbrbg6bf2\apache-maven-3.9.12\bin\mvn.cmd`
+- **`mvn` is not on PATH** — use `run_job.bat`, which delegates to `mvnw.cmd` (Maven Wrapper). On first run `mvnw.cmd` downloads Maven 3.9.12 into `~/.m2/wrapper/dists/` automatically.
 - **JAVA_HOME must be set** to the GraalVM JDK before invoking Maven, otherwise
   the compiler reports "invalid target release: 21".
-  Path: `C:\Program Files\Java\graalvm-jdk-21.0.10+8.1`
+  Path: `E:\code\dist\jvm\graalvm-jdk-21.0.10+8.1`
 - `run_job.bat` handles both of the above.
+
+## IntelliJ Maven Runner
+
+Four shared run configurations are committed under `.idea/runConfigurations/` and appear
+automatically in the Run/Debug selector (`Maven compile`, `Maven test`, `Maven exec`,
+`Maven exec-git`). They require a one-time per-machine setup in IntelliJ settings:
+
+1. **Maven home path** — Settings → Build, Execution, Deployment → Build Tools → Maven →
+   *Maven home path*:
+   `C:\Users\csa\.m2\wrapper\dists\apache-maven-3.9.12`
+
+2. **Runner JRE** — Settings → Build, Execution, Deployment → Build Tools → Maven →
+   Runner → *JRE*: pick **GraalVM JDK 21**
+   (`E:\code\dist\jvm\graalvm-jdk-21.0.10+8.1`).
+   If it is not listed, add it first via File → Project Structure → SDKs.
+
+No env-var overrides are needed in the XML files — the globally configured Runner JRE
+provides GraalVM JDK 21 for both compilation and `exec:exec`'s `${java.home}` resolution.
+
+`run_job.bat` remains available for terminal use and requires no setup.
 
 ## Architecture
 
