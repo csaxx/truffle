@@ -24,7 +24,7 @@ class ScheduledReloaderTest {
         try (GraalPyInterpreter interp = newInterpreter("python_hr_v1");
              ScheduledReloader reloader = new ScheduledReloader(interp, INTERVAL)) {
             reloader.start();
-            assertNotNull(reloader.getLastCheckedAt());
+            assertNotNull(reloader.getStatus().getLastCheckedAt());
         }
     }
 
@@ -34,7 +34,7 @@ class ScheduledReloaderTest {
         try (GraalPyInterpreter interp = newInterpreter("python_hr_v1");
              ScheduledReloader reloader = new ScheduledReloader(interp, INTERVAL)) {
             reloader.start();
-            assertNotNull(reloader.getLastChangedAt());
+            assertNotNull(reloader.getStatus().getLastChangedAt());
         }
     }
 
@@ -47,7 +47,7 @@ class ScheduledReloaderTest {
             // Now create reloader — start() will call reload() again but nothing changed
             try (ScheduledReloader reloader = new ScheduledReloader(interp, new SchedulerConfig(Duration.ofSeconds(60)))) {
                 reloader.start();
-                assertNull(reloader.getLastChangedAt(),
+                assertNull(reloader.getStatus().getLastChangedAt(),
                         "lastChangedAt should remain null when reload detects no changes");
             }
         }
@@ -58,10 +58,10 @@ class ScheduledReloaderTest {
         try (GraalPyInterpreter interp = newInterpreter("python_hr_v1");
              ScheduledReloader reloader = new ScheduledReloader(interp, INTERVAL)) {
             reloader.start();
-            Instant after = reloader.getLastCheckedAt();
+            Instant after = reloader.getStatus().getLastCheckedAt();
             // Wait long enough for at least one background tick
             Thread.sleep(INTERVAL.interval().toMillis() * 3);
-            Instant later = reloader.getLastCheckedAt();
+            Instant later = reloader.getStatus().getLastCheckedAt();
             assertNotNull(later);
             assertTrue(later.isAfter(after),
                     "lastCheckedAt should advance after waiting > interval");
@@ -76,9 +76,9 @@ class ScheduledReloaderTest {
         reloader.close();
         interp.close();
 
-        Instant afterClose = reloader.getLastCheckedAt();
+        Instant afterClose = reloader.getStatus().getLastCheckedAt();
         Thread.sleep(INTERVAL.interval().toMillis() * 3);
-        Instant stillSame = reloader.getLastCheckedAt();
+        Instant stillSame = reloader.getStatus().getLastCheckedAt();
 
         assertEquals(afterClose, stillSame,
                 "lastCheckedAt should not advance after close()");
