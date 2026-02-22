@@ -65,6 +65,19 @@ public class GraalPyInterpreter implements AutoCloseable {
     }
 
     /**
+     * Returns one (filename, Value) pair per file for the given member name,
+     * in index.txt order. Fetching name and value in a single pass is safe
+     * against concurrent reloads.
+     */
+    public List<Map.Entry<String, Value>> getNamedMembers(String memberName) {
+        return fileContexts.entrySet().stream()
+                .map(e -> Map.entry(
+                        e.getKey(),
+                        e.getValue().context().getBindings("python").getMember(memberName)))
+                .toList();
+    }
+
+    /**
      * Returns the names of all currently loaded files, in index order.
      */
     public List<String> getLoadedFileNames() {
