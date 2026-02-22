@@ -24,12 +24,14 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
 
     private transient GraalPyInterpreter interpreter;
     private transient List<Value> pyProcessElements;
+    private transient long lastGeneration = -1;
 
     @Override
     public void open(OpenContext openContext) throws Exception {
         interpreter = new GraalPyInterpreter(new ResourcePythonSource("python"));
         interpreter.reload();
         pyProcessElements = interpreter.getMembers("process_element");
+        lastGeneration = interpreter.getGeneration();
     }
 
     @Override
@@ -43,13 +45,19 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
     public void reload() throws IOException {
         if (interpreter.reload()) {
             pyProcessElements = interpreter.getMembers("process_element");
+            lastGeneration = interpreter.getGeneration();
         }
     }
 
     @Override
     public void processElement(String line, Context ctx, Collector<String> out) {
-        for (Value pyProcessElement : pyProcessElements) {
-            pyProcessElement.execute(line, out);
+        long gen = interpreter.getGeneration();
+        if (gen != lastGeneration) {
+            pyProcessElements = interpreter.getMembers("process_element");
+            lastGeneration = gen;
+        }
+        for (Value fn : pyProcessElements) {
+            fn.execute(line, out);
         }
     }
 

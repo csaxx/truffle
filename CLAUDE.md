@@ -95,6 +95,7 @@ Two implementations ship with the project:
 | `ResourcePythonSource` | Classpath resources (JAR) | `new ResourcePythonSource("python")` |
 | `GitPythonSource` | GitHub / GitLab via HTTP | `new GitPythonSource(url, dir, branch, token)` |
 | `S3PythonSource` | AWS S3 / MinIO | `new S3PythonSource(s3Client, bucket, prefix)` |
+| `FilePythonSource` | Local filesystem + WatchService | `new FilePythonSource(Path.of("/opt/scripts"))` |
 
 **`ResourcePythonSource`** reads `{directory}/index.txt` from the classpath, then loads
 each listed `.py` file from `{directory}/{name}`. Used in production by
@@ -116,6 +117,28 @@ endpoint wiring out of the class:
 - **MinIO**: build with `.endpointOverride(...)`, `.forcePathStyle(true)`, and explicit
   `credentialsProvider`. MinIO accepts any region string.
 An empty `prefix` fetches objects directly from the bucket root.
+
+**`FilePythonSource`** reads `index.txt` and `.py` files from a local directory using
+`Files.readString`. It implements the push-notification protocol: `setChangeListener`
+starts a daemon `WatchService` thread that monitors the directory for `ENTRY_CREATE`,
+`ENTRY_MODIFY`, and `ENTRY_DELETE` events. When a `.py` file or `index.txt` changes, the
+watcher debounces 100 ms then calls the registered callback, which triggers
+`GraalPyInterpreter.reload()` automatically — no manual polling needed.
+Call `close()` (or use try-with-resources) to stop the watcher thread.
+
+**Push-notification protocol** (`setChangeListener`). `PythonSource` now extends
+`Closeable` and has two default methods: `setChangeListener(Runnable onChanged)` (no-op)
+and `close()` (no-op). `GraalPyInterpreter` calls `setChangeListener` in its constructor,
+passing a callback that invokes `reload()`. Sources that can detect changes (`FilePythonSource`)
+override `setChangeListener` to start a watcher; pull-only sources (`ResourcePythonSource`,
+`GitPythonSource`, `S3PythonSource`) inherit the no-op default and remain unchanged.
+`GraalPyInterpreter.close()` now also calls `source.close()` to stop any watcher thread.
+
+**Generation counter.** `GraalPyInterpreter` exposes `getGeneration()` — a `volatile long`
+incremented on every successful reload that detected changes. `ProcessFunctionPython`
+caches `lastGeneration` and lazily refreshes its `Value` references at the top of
+`processElement` when the generation has advanced, avoiding stale references to closed
+Python contexts after a background reload.
 
 **Adding a new `PythonSource`.** Implement `listFiles()` and `readFile(name)` and pass
 an instance to `new GraalPyInterpreter(source)`. No other changes needed.

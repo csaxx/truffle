@@ -33,9 +33,14 @@ public class GraalPyInterpreter implements AutoCloseable {
 
     private final PythonSource source;
 
+    private volatile long generation = 0;
+
     public GraalPyInterpreter(PythonSource source) {
         this.source = source;
+        source.setChangeListener(this::onSourceChanged);
     }
+
+    public long getGeneration() { return generation; }
 
     private Context createContext() {
         return Context.newBuilder("python")
@@ -119,7 +124,16 @@ public class GraalPyInterpreter implements AutoCloseable {
         fileContexts.clear();
         entries.forEach(e -> fileContexts.put(e.getKey(), e.getValue()));
 
+        generation++;
         return true;
+    }
+
+    private void onSourceChanged() {
+        try {
+            reload();
+        } catch (IOException e) {
+            System.err.println("[GraalPyInterpreter] Auto-reload failed: " + e.getMessage());
+        }
     }
 
     private static String sha256(String name, String content) {
@@ -137,5 +151,6 @@ public class GraalPyInterpreter implements AutoCloseable {
     @Override
     public void close() {
         fileContexts.values().forEach(fc -> fc.context().close());
+        try { source.close(); } catch (IOException ignored) {}
     }
 }
