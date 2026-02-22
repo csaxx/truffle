@@ -1,6 +1,8 @@
-package org.csa.truffle.graal;
+package org.csa.truffle.reload;
 
 import org.csa.truffle.SwitchablePythonSource;
+import org.csa.truffle.graal.GraalPyInterpreter;
+import org.csa.truffle.graal.reload.ScheduledReloader;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;

@@ -1,8 +1,7 @@
 package org.csa.truffle;
 
 import org.csa.truffle.function.ProcessFunctionPython;
-import org.csa.truffle.graal.source.GitPythonSource;
-import org.csa.truffle.graal.source.PythonSourceFactory;
+import org.csa.truffle.graal.source.GitSourceConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,9 +11,9 @@ import java.util.List;
 
 /**
  * Git-backed variant of {@link TruffleJob}.
- *
+ * <p>
  * Loads Python transform scripts directly from GitHub at runtime via
- * {@link GitPythonSource}, runs them through a Flink pipeline, and writes
+ * {@link org.csa.truffle.graal.source.GitPythonSource}, runs them through a Flink pipeline, and writes
  * the result to {@code output/v3/sales_transformed.csv}.
  */
 public class TruffleJobGit {
@@ -22,11 +21,12 @@ public class TruffleJobGit {
     private static final Logger log = LoggerFactory.getLogger(TruffleJobGit.class);
 
     public static void main(String[] args) throws Exception {
-        PythonSourceFactory sourceFactory = () -> new GitPythonSource(
+        GitSourceConfig gitConfig = new GitSourceConfig(
                 "https://github.com/csaxx/truffle",
                 "src/main/resources/python",
                 "master",
-                null   // public repo — no token needed
+                null,   // public repo — no token needed
+                null    // auto-detect forge from URL
         );
 
         log.info("Loading CSV resources");
@@ -36,7 +36,7 @@ public class TruffleJobGit {
         log.info("Running V3 (Python + Git source) transform");
         List<String> v3 = TruffleJob.runTransform(
                 allLines,
-                new ProcessFunctionPython(Duration.ofMinutes(5), sourceFactory)
+                new ProcessFunctionPython(Duration.ofMinutes(5), gitConfig)
         );
         log.info("V3 complete: {} output rows", v3.size());
         TruffleJob.writeOutput(Paths.get("output", "v3", "sales_transformed.csv"), v3);

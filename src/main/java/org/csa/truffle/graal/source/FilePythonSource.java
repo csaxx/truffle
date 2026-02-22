@@ -1,12 +1,12 @@
 package org.csa.truffle.graal.source;
 
+import org.csa.truffle.graal.PythonSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
-import java.nio.file.WatchEvent.Kind;
 import java.util.List;
 
 /**
@@ -55,7 +55,9 @@ public class FilePythonSource implements PythonSource {
         return Files.readString(directory.resolve(name), StandardCharsets.UTF_8);
     }
 
-    /** Called once by GraalPyInterpreter. Starts the watcher thread. */
+    /**
+     * Called once by GraalPyInterpreter. Starts the watcher thread.
+     */
     @Override
     public synchronized void setChangeListener(Runnable onChanged) {
         if (!watch || watcherThread != null) return; // idempotent
@@ -102,7 +104,9 @@ public class FilePythonSource implements PythonSource {
             key.reset();
 
             if (relevant) {
-                try { Thread.sleep(DEBOUNCE_MS); } catch (InterruptedException e) {
+                try {
+                    Thread.sleep(DEBOUNCE_MS);
+                } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return;
                 }

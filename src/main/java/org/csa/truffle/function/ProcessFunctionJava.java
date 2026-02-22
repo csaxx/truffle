@@ -8,10 +8,10 @@ import java.util.Locale;
 /**
  * Parses raw sales CSV lines and emits enriched records with a computed
  * totalPrice and a size category (small / medium / large).
- *
+ * <p>
  * Input  fields (6): transactionId, customerId, product, quantity, unitPrice, date
  * Output fields (8): transactionId, customerId, product, quantity, unitPrice,
- *                    totalPrice, category, date
+ * totalPrice, category, date
  */
 public class ProcessFunctionJava extends ProcessFunction<String, String> {
 
@@ -29,11 +29,11 @@ public class ProcessFunctionJava extends ProcessFunction<String, String> {
 
         try {
             String transactionId = f[0].trim();
-            String customerId    = f[1].trim();
-            String product       = f[2].trim();
-            int    quantity      = Integer.parseInt(f[3].trim());
-            double unitPrice     = Double.parseDouble(f[4].trim());
-            String date          = f[5].trim();
+            String customerId = f[1].trim();
+            String product = f[2].trim();
+            int quantity = Integer.parseInt(f[3].trim());
+            double unitPrice = Double.parseDouble(f[4].trim());
+            String date = f[5].trim();
 
             double totalPrice = quantity * unitPrice;
 

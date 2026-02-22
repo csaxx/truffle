@@ -1,6 +1,7 @@
 package org.csa.truffle.graal.source;
 
 import org.apache.commons.lang3.StringUtils;
+import org.csa.truffle.graal.PythonSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,41 +53,45 @@ public class GitPythonSource implements PythonSource {
      * auto-detection heuristic).
      */
     public GitPythonSource(String repoUrl, String directory, String branch,
-                           String token, ForgeType forgeType) {
+                           String token, GitForgeType gitForgeType) {
         this.directory = directory;
         this.token = token;
-        this.rawBaseUrl = buildRawBase(repoUrl, branch, forgeType);
+        this.rawBaseUrl = buildRawBase(repoUrl, branch, gitForgeType);
         this.http = HttpClient.newHttpClient();
         log.info("Initialized: rawBaseUrl={}, directory={}, auth={}, forge={}",
-                 rawBaseUrl, directory,
-                 StringUtils.isNotBlank(token) ? "token" : "none", forgeType);
+                rawBaseUrl, directory,
+                StringUtils.isNotBlank(token) ? "token" : "none", gitForgeType);
     }
 
     /**
      * Creates a {@code GitPythonSource} with auto-detected forge type.
-     * {@code github.com} is detected as {@link ForgeType#GITHUB}; all other
-     * hosts fall back to {@link ForgeType#GITLAB}. Use the 5-arg constructor
-     * to explicitly specify {@link ForgeType#GITEA} for Gitea / Forgejo hosts.
+     * {@code github.com} is detected as {@link GitForgeType#GITHUB}; all other
+     * hosts fall back to {@link GitForgeType#GITLAB}. Use the 5-arg constructor
+     * to explicitly specify {@link GitForgeType#GITEA} for Gitea / Forgejo hosts.
      */
     public GitPythonSource(String repoUrl, String directory, String branch, String token) {
         this(repoUrl, directory, branch, token, detectForge(repoUrl));
     }
 
-    /** Infers the forge type from the repo URL host. */
-    static ForgeType detectForge(String repoUrl) {
+    /**
+     * Infers the forge type from the repo URL host.
+     */
+    public static GitForgeType detectForge(String repoUrl) {
         String host = URI.create(StringUtils.removeEnd(repoUrl, "/")).getHost();
-        return "github.com".equals(host) ? ForgeType.GITHUB : ForgeType.GITLAB;
+        return "github.com".equals(host) ? GitForgeType.GITHUB : GitForgeType.GITLAB;
     }
 
-    /** Converts a repo URL + branch into the provider-specific raw-content base URL. */
-    static String buildRawBase(String repoUrl, String branch, ForgeType forgeType) {
+    /**
+     * Converts a repo URL + branch into the provider-specific raw-content base URL.
+     */
+    public static String buildRawBase(String repoUrl, String branch, GitForgeType gitForgeType) {
         String url = StringUtils.removeEnd(repoUrl, "/");
         URI uri = URI.create(url);
         String base = uri.getScheme() + "://" + uri.getHost() + uri.getPath();
-        return switch (forgeType) {
+        return switch (gitForgeType) {
             case GITHUB -> "https://raw.githubusercontent.com" + uri.getPath() + "/" + branch;
             case GITLAB -> base + "/-/raw/" + branch;
-            case GITEA  -> base + "/raw/branch/" + branch;
+            case GITEA -> base + "/raw/branch/" + branch;
         };
     }
 

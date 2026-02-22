@@ -1,6 +1,6 @@
-package org.csa.truffle.graal.source;
+package org.csa.truffle.graal;
 
-import org.csa.truffle.graal.GraalPyInterpreter;
+import org.csa.truffle.graal.source.FilePythonSource;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -13,10 +13,14 @@ import java.util.List;
  */
 public interface PythonSource extends Closeable {
 
-    /** Returns the ordered list of Python filenames to load. */
+    /**
+     * Returns the ordered list of Python filenames to load.
+     */
     List<String> listFiles() throws IOException;
 
-    /** Returns the source code of the named file. */
+    /**
+     * Returns the source code of the named file.
+     */
     String readFile(String name) throws IOException;
 
     /**
@@ -25,9 +29,13 @@ public interface PythonSource extends Closeable {
      * store the callback and invoke it when a change is detected.
      * The default is a no-op (pull-only sources ignore it).
      */
-    default void setChangeListener(Runnable onChanged) {}
+    default void setChangeListener(Runnable onChanged) {
+    }
 
-    /** Releases any resources held (e.g. a watcher thread). No-op by default. */
+    /**
+     * Releases any resources held (e.g. a watcher thread). No-op by default.
+     */
     @Override
-    default void close() throws IOException {}
+    default void close() throws IOException {
+    }
 }

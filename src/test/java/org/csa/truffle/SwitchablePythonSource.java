@@ -1,6 +1,6 @@
 package org.csa.truffle;
 
-import org.csa.truffle.graal.source.PythonSource;
+import org.csa.truffle.graal.PythonSource;
 import org.csa.truffle.graal.source.ResourcePythonSource;
 
 import java.io.IOException;
@@ -15,7 +15,7 @@ public class SwitchablePythonSource implements PythonSource {
 
     public SwitchablePythonSource(String initial) { current = new ResourcePythonSource(initial); }
 
-    void switchTo(String dir) { current = new ResourcePythonSource(dir); }
+    public void switchTo(String dir) { current = new ResourcePythonSource(dir); }
 
     @Override public List<String> listFiles() throws IOException { return current.listFiles(); }
     @Override public String readFile(String name) throws IOException { return current.readFile(name); }

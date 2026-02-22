@@ -1,6 +1,7 @@
 package org.csa.truffle.graal.source;
 
 import org.apache.commons.lang3.StringUtils;
+import org.csa.truffle.graal.PythonSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.ResponseBytes;
@@ -48,7 +49,7 @@ public class S3PythonSource implements PythonSource {
         // Normalise: strip trailing slashes
         this.prefix = StringUtils.stripEnd(prefix, "/");
         log.info("Initialized: bucket={}, prefix={}",
-                 bucket, this.prefix.isEmpty() ? "(root)" : this.prefix);
+                bucket, this.prefix.isEmpty() ? "(root)" : this.prefix);
     }
 
     @Override

@@ -1,6 +1,5 @@
 package org.csa.truffle.graal;
 
-import org.csa.truffle.graal.source.PythonSource;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Source;
@@ -45,7 +44,9 @@ public class GraalPyInterpreter implements AutoCloseable {
         log.debug("Initialized with source: {}", source.getClass().getSimpleName());
     }
 
-    public long getGeneration() { return generation; }
+    public long getGeneration() {
+        return generation;
+    }
 
     private Context createContext() {
         return Context.newBuilder("python")
@@ -180,6 +181,9 @@ public class GraalPyInterpreter implements AutoCloseable {
     public void close() {
         log.debug("Closing interpreter: {} file context(s)", fileContexts.size());
         fileContexts.values().forEach(fc -> fc.context().close());
-        try { source.close(); } catch (IOException ignored) {}
+        try {
+            source.close();
+        } catch (IOException ignored) {
+        }
     }
 }

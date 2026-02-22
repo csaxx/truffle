@@ -1,6 +1,7 @@
 package org.csa.truffle.graal.source;
 
 import org.apache.commons.io.IOUtils;
+import org.csa.truffle.graal.PythonSource;
 
 import java.io.IOException;
 import java.io.InputStream;

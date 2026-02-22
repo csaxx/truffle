@@ -50,12 +50,12 @@ class ProcessFunctionEquivalenceTest {
         List<String> out1 = new ArrayList<>(runThroughHarness(new ProcessFunctionJava(), input));
         List<String> out2 = new ArrayList<>(runThroughHarness(new ProcessFunctionPython(), input));
 
-        assertFalse(out1.isEmpty(), "V1 produced no output");
-        assertFalse(out2.isEmpty(), "V2 produced no output");
+        assertFalse(out1.isEmpty(), "java produced no output");
+        assertFalse(out2.isEmpty(), "python produced no output");
 
         Collections.sort(out1);
         Collections.sort(out2);
-        assertEquals(out1, out2, "V1 and V2 must produce identical transformed output");
+        assertEquals(out1, out2, "java and python must produce identical transformed output");
     }
 
     @Test

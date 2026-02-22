@@ -1,5 +1,7 @@
 package org.csa.truffle;
 
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.CloseableIterator;
@@ -7,9 +9,6 @@ import org.csa.truffle.function.ProcessFunctionJava;
 import org.csa.truffle.function.ProcessFunctionPython;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.IOUtils;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -21,14 +20,14 @@ import java.util.List;
 
 /**
  * Truffle Flink job.
- *
+ * <p>
  * Reads three quarterly sales CSV files from the classpath, applies
  * {@link ProcessFunctionJava} (V1) and {@link ProcessFunctionPython} (V2)
  * to enrich each record, then writes the results to separate subdirectories
  * under {@code output/}.
- *
+ * <p>
  * Run locally:
- *   mvn exec:java
+ * mvn exec:java
  */
 public class TruffleJob {
 
@@ -48,14 +47,14 @@ public class TruffleJob {
         log.info("Running V1 (Java) transform");
         List<String> v1 = runTransform(allLines, new ProcessFunctionJava());
         log.info("V1 complete: {} output rows", v1.size());
-        writeOutput(Paths.get("output", "v1", "sales_transformed.csv"), v1);
+        writeOutput(Paths.get("output", "java", "sales_transformed.csv"), v1);
 
         log.info("Running V2 (Python) transform");
         List<String> v2 = runTransform(allLines, new ProcessFunctionPython());
         log.info("V2 complete: {} output rows", v2.size());
-        writeOutput(Paths.get("output", "v2", "sales_transformed.csv"), v2);
+        writeOutput(Paths.get("output", "python", "sales_transformed.csv"), v2);
 
-        log.info("Done. Output written to output/v1/ and output/v2/");
+        log.info("Done. Output written to output/java/ and output/python/");
     }
 
     static List<String> loadCsvLines() throws Exception {

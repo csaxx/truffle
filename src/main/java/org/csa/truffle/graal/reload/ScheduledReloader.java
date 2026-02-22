@@ -1,5 +1,6 @@
-package org.csa.truffle.graal;
+package org.csa.truffle.graal.reload;
 
+import org.csa.truffle.graal.GraalPyInterpreter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -71,8 +72,13 @@ public class ScheduledReloader implements AutoCloseable {
         }
     }
 
-    public Instant getLastCheckedAt() { return lastCheckedAt; }
-    public Instant getLastChangedAt() { return lastChangedAt; }
+    public Instant getLastCheckedAt() {
+        return lastCheckedAt;
+    }
+
+    public Instant getLastChangedAt() {
+        return lastChangedAt;
+    }
 
     @Override
     public void close() {
