@@ -5,6 +5,7 @@ import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.Collector;
 import org.csa.truffle.graal.GraalPyInterpreter;
 import org.csa.truffle.graal.ScheduledReloader;
+import org.csa.truffle.graal.source.PythonSourceFactory;
 import org.csa.truffle.graal.source.ResourcePythonSource;
 import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Value;
@@ -31,6 +32,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
     private static final Logger log = LoggerFactory.getLogger(ProcessFunctionPython.class);
 
     private final Duration reloadInterval;
+    private final PythonSourceFactory sourceFactory;
 
     private transient GraalPyInterpreter interpreter;
     private transient ScheduledReloader reloader;
@@ -38,17 +40,22 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
     private transient long lastGeneration = -1;
 
     public ProcessFunctionPython() {
-        this(Duration.ofMinutes(5));
+        this(Duration.ofMinutes(5), () -> new ResourcePythonSource("python"));
     }
 
     public ProcessFunctionPython(Duration reloadInterval) {
+        this(reloadInterval, () -> new ResourcePythonSource("python"));
+    }
+
+    public ProcessFunctionPython(Duration reloadInterval, PythonSourceFactory sourceFactory) {
         this.reloadInterval = reloadInterval;
+        this.sourceFactory = sourceFactory;
     }
 
     @Override
     public void open(OpenContext openContext) throws Exception {
         log.info("Opening: loading Python scripts from classpath 'python/' directory");
-        interpreter = new GraalPyInterpreter(new ResourcePythonSource("python"));
+        interpreter = new GraalPyInterpreter(sourceFactory.create());
         reloader = new ScheduledReloader(interpreter, reloadInterval);
         reloader.start();   // synchronous initial reload + schedules background reloads
         pyProcessElements = interpreter.getNamedMembers("process_element");

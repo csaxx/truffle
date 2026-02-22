@@ -4,32 +4,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-Use `run_tests.bat` instead of calling `mvn` directly. It sets `JAVA_HOME` and
+Use `run_job.bat` instead of calling `mvn` directly. It sets `JAVA_HOME` and
 the full Maven path automatically (both are needed on this machine).
 
 ```bat
 rem Compile
-run_tests.bat compile
+run_job.bat compile
 
 rem Run tests
-run_tests.bat test
+run_job.bat test
 
 rem Run the job (writes output/v1/ and output/v2/)
 rem exec:exec spawns a child JVM so Flink 2.x classloader isolation works correctly.
-run_tests.bat exec
+run_job.bat exec
 
 rem Build a fat JAR for cluster submission
-run_tests.bat package -DskipTests
+run_job.bat package -DskipTests
 ```
 
 ### Environment notes (Windows)
 
-- **`mvn` is not on PATH** — use `run_tests.bat` or the full path:
+- **`mvn` is not on PATH** — use `run_job.bat` or the full path:
   `C:\Users\csa\.m2\wrapper\dists\apache-maven-3.6.3-bin\1iopthnavndlasol9gbrbg6bf2\apache-maven-3.9.12\bin\mvn.cmd`
 - **JAVA_HOME must be set** to the GraalVM JDK before invoking Maven, otherwise
   the compiler reports "invalid target release: 21".
   Path: `C:\Program Files\Java\graalvm-jdk-21.0.10+8.1`
-- `run_tests.bat` handles both of the above.
+- `run_job.bat` handles both of the above.
 
 ## Architecture
 

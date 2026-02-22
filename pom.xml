@@ -120,6 +120,19 @@
             <argument>org.csa.truffle.TruffleJob</argument>
           </arguments>
         </configuration>
+        <executions>
+          <execution>
+            <id>exec-git</id>
+            <configuration>
+              <executable>${java.home}/bin/java</executable>
+              <arguments>
+                <argument>-classpath</argument>
+                <classpath/>
+                <argument>org.csa.truffle.TruffleJobGit</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
 
       <plugin>

@@ -79,7 +79,7 @@ public class TruffleJob {
         return result;
     }
 
-    private static void writeOutput(Path file, List<String> lines) throws Exception {
+    static void writeOutput(Path file, List<String> lines) throws Exception {
         List<String> output = new ArrayList<>();
         output.add("transactionId,customerId,product,quantity,unitPrice,totalPrice,category,date");
         output.addAll(lines);
