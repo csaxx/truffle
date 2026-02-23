@@ -43,6 +43,8 @@ public final class PythonSourceFactory {
                             AwsBasicCredentials.create(c.accessKeyId(), c.secretKey())));
                 yield new S3PythonSource(b.build(), c.bucket(), c.prefix());
             }
+            case DirectPythonSourceConfig c -> c.source();
+
             default -> throw new IllegalArgumentException("Unknown PythonSourceConfig type: " + config.getClass().getName());
         };
     }

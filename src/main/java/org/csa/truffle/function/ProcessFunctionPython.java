@@ -4,11 +4,11 @@ import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.Collector;
 import org.csa.truffle.graal.GraalPyInterpreter;
+import org.csa.truffle.graal.reload.DatasetConfig;
 import org.csa.truffle.graal.reload.ReloadResult;
 import org.csa.truffle.graal.reload.ScheduledReloader;
 import org.csa.truffle.graal.reload.SchedulerConfig;
 import org.csa.truffle.graal.source.PythonSourceConfig;
-import org.csa.truffle.graal.source.PythonSourceFactory;
 import org.csa.truffle.graal.source.resource.ResourceSourceConfig;
 import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Value;
@@ -34,64 +34,79 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
 
     private static final Logger log = LoggerFactory.getLogger(ProcessFunctionPython.class);
 
-    private final SchedulerConfig schedulerConfig;
-    private final PythonSourceConfig sourceConfig;
+    private final List<DatasetConfig> datasetConfigs;
+    private final String activeDatasetId;
 
-    private transient GraalPyInterpreter interpreter;
     private transient ScheduledReloader reloader;
+    private transient GraalPyInterpreter activeInterpreter;
     private transient List<Map.Entry<String, Value>> pyProcessElements;
     private transient long lastGeneration = -1;
 
+    // -------------------------------------------------------------------------
+    // Constructors
+    // -------------------------------------------------------------------------
+
+    /** Full multi-dataset constructor. */
+    public ProcessFunctionPython(List<DatasetConfig> datasetConfigs, String activeDatasetId) {
+        this.datasetConfigs  = List.copyOf(datasetConfigs);
+        this.activeDatasetId = activeDatasetId;
+    }
+
+    /** Single-dataset convenience constructor. */
+    public ProcessFunctionPython(DatasetConfig config) {
+        this(List.of(config), config.id());
+    }
+
+    /** Backward-compat: uses classpath {@code python/} directory, 5-minute reload interval. */
     public ProcessFunctionPython() {
-        this(new SchedulerConfig(Duration.ofMinutes(5)), new ResourceSourceConfig("python"));
+        this(new DatasetConfig("default",
+                new ResourceSourceConfig("python"),
+                new SchedulerConfig(Duration.ofMinutes(5))));
     }
 
+    /** Backward-compat: uses classpath {@code python/} directory with a custom interval. */
     public ProcessFunctionPython(Duration interval) {
-        this(new SchedulerConfig(interval), new ResourceSourceConfig("python"));
+        this(new DatasetConfig("default",
+                new ResourceSourceConfig("python"),
+                new SchedulerConfig(interval)));
     }
 
+    /** Backward-compat: explicit scheduler + source config, wrapped in a default dataset. */
     public ProcessFunctionPython(SchedulerConfig schedulerConfig, PythonSourceConfig sourceConfig) {
-        this.schedulerConfig = schedulerConfig;
-        this.sourceConfig = sourceConfig;
+        this(new DatasetConfig("default", sourceConfig, schedulerConfig));
     }
+
+    // -------------------------------------------------------------------------
+    // Flink lifecycle
+    // -------------------------------------------------------------------------
 
     @Override
     public void open(OpenContext openContext) throws Exception {
-        log.info("Opening: loading Python scripts from classpath 'python/' directory");
-        interpreter = new GraalPyInterpreter(PythonSourceFactory.create(sourceConfig));
-        reloader = new ScheduledReloader(interpreter, schedulerConfig);
+        log.info("Opening: loading Python scripts");
+        reloader = new ScheduledReloader(datasetConfigs);
         reloader.start();   // synchronous initial reload + schedules background reloads
-        pyProcessElements = interpreter.getNamedMembers("process_element");
-        lastGeneration = interpreter.getGeneration();
+        activeInterpreter = reloader.getInterpreter(activeDatasetId);
+        pyProcessElements = activeInterpreter.getNamedMembers("process_element");
+        lastGeneration    = activeInterpreter.getGeneration();
         log.debug("Loaded {} process_element function(s)", pyProcessElements.size());
     }
 
     @Override
     public void close() throws Exception {
         log.debug("Closing interpreter");
-        if (reloader != null) reloader.close();
-        if (interpreter != null) interpreter.close();
+        if (reloader != null) reloader.close();   // also closes owned interpreters
     }
 
-    /**
-     * Hot-reloads Python scripts from the production {@code python/} directory.
-     */
-    public void reload() throws IOException {
-        log.info("Manual hot-reload triggered");
-        ReloadResult r = interpreter.reload();
-        if (r.changed()) {
-            log.info("Manual hot-reload complete: data changed");
-        } else {
-            log.debug("Manual hot-reload: no changes detected");
-        }
-    }
+    // -------------------------------------------------------------------------
+    // Processing
+    // -------------------------------------------------------------------------
 
     @Override
     public void processElement(String line, Context ctx, Collector<String> out) {
-        reloader.checkForFatalError();
-        long gen = interpreter.getGeneration();
+        reloader.checkForFatalErrorById(activeDatasetId);
+        long gen = activeInterpreter.getGeneration();
         if (gen != lastGeneration) {
-            pyProcessElements = interpreter.getNamedMembers("process_element");
+            pyProcessElements = activeInterpreter.getNamedMembers("process_element");
             lastGeneration = gen;
         }
         for (Map.Entry<String, Value> entry : pyProcessElements) {
@@ -105,4 +120,20 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Manual hot-reload
+    // -------------------------------------------------------------------------
+
+    /**
+     * Hot-reloads Python scripts from the active dataset's source.
+     */
+    public void reload() throws IOException {
+        log.info("Manual hot-reload triggered");
+        ReloadResult r = activeInterpreter.reload();
+        if (r.changed()) {
+            log.info("Manual hot-reload complete: data changed");
+        } else {
+            log.debug("Manual hot-reload: no changes detected");
+        }
+    }
 }
