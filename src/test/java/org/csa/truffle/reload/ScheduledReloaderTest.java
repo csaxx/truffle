@@ -1,7 +1,6 @@
 package org.csa.truffle.reload;
 
 import org.csa.truffle.SwitchablePythonSource;
-import org.csa.truffle.graal.reload.DatasetConfig;
 import org.csa.truffle.graal.reload.ScheduledReloader;
 import org.csa.truffle.graal.reload.SchedulerConfig;
 import org.csa.truffle.graal.source.DirectPythonSourceConfig;
@@ -10,7 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -20,8 +19,8 @@ class ScheduledReloaderTest {
 
     @Test
     void lastCheckedAt_setAfterStart() throws Exception {
-        DatasetConfig cfg = new DatasetConfig("default", new ResourceSourceConfig("python_hr_v1"), INTERVAL);
-        try (ScheduledReloader reloader = new ScheduledReloader(List.of(cfg))) {
+        try (ScheduledReloader reloader = new ScheduledReloader()) {
+            reloader.register("default", new ResourceSourceConfig("python_hr_v1"), INTERVAL, (cfg, interp) -> {});
             reloader.start();
             assertNotNull(reloader.getStatus().getLastCheckedAt());
         }
@@ -30,8 +29,8 @@ class ScheduledReloaderTest {
     @Test
     void lastChangedAt_setWhenDataChanges() throws Exception {
         // First load always produces changes (new files are loaded)
-        DatasetConfig cfg = new DatasetConfig("default", new ResourceSourceConfig("python_hr_v1"), INTERVAL);
-        try (ScheduledReloader reloader = new ScheduledReloader(List.of(cfg))) {
+        try (ScheduledReloader reloader = new ScheduledReloader()) {
+            reloader.register("default", new ResourceSourceConfig("python_hr_v1"), INTERVAL, (cfg, interp) -> {});
             reloader.start();
             assertNotNull(reloader.getStatus().getLastChangedAt());
         }
@@ -39,10 +38,9 @@ class ScheduledReloaderTest {
 
     @Test
     void lastChangedAt_notUpdatedOnSubsequentUnchangedReload() throws Exception {
-        DatasetConfig cfg = new DatasetConfig("default",
-                new ResourceSourceConfig("python_hr_v1"),
-                new SchedulerConfig(Duration.ofMillis(50)));
-        try (ScheduledReloader reloader = new ScheduledReloader(List.of(cfg))) {
+        try (ScheduledReloader reloader = new ScheduledReloader()) {
+            reloader.register("default", new ResourceSourceConfig("python_hr_v1"),
+                    new SchedulerConfig(Duration.ofMillis(50)), (cfg, interp) -> {});
             reloader.start();
             Instant changedAfterInit = reloader.getStatus().getLastChangedAt();
             assertNotNull(changedAfterInit, "initial load always detects changes");
@@ -57,8 +55,8 @@ class ScheduledReloaderTest {
 
     @Test
     void periodicReload_firesWithinInterval() throws Exception {
-        DatasetConfig cfg = new DatasetConfig("default", new ResourceSourceConfig("python_hr_v1"), INTERVAL);
-        try (ScheduledReloader reloader = new ScheduledReloader(List.of(cfg))) {
+        try (ScheduledReloader reloader = new ScheduledReloader()) {
+            reloader.register("default", new ResourceSourceConfig("python_hr_v1"), INTERVAL, (cfg, interp) -> {});
             reloader.start();
             Instant after = reloader.getStatus().getLastCheckedAt();
             // Wait long enough for at least one background tick
@@ -72,8 +70,8 @@ class ScheduledReloaderTest {
 
     @Test
     void close_stopsScheduler() throws Exception {
-        DatasetConfig cfg = new DatasetConfig("default", new ResourceSourceConfig("python_hr_v1"), INTERVAL);
-        ScheduledReloader reloader = new ScheduledReloader(List.of(cfg));
+        ScheduledReloader reloader = new ScheduledReloader();
+        reloader.register("default", new ResourceSourceConfig("python_hr_v1"), INTERVAL, (cfg, interp) -> {});
         reloader.start();
         reloader.close();
 
@@ -89,8 +87,8 @@ class ScheduledReloaderTest {
     void gracePeriod_exceeded_fatalErrorThrows() throws Exception {
         SwitchablePythonSource src = new SwitchablePythonSource("python_hr_v1");
         SchedulerConfig cfg = new SchedulerConfig(Duration.ofMillis(30), Duration.ofMillis(100));
-        DatasetConfig dataset = new DatasetConfig("default", new DirectPythonSourceConfig(src), cfg);
-        try (ScheduledReloader reloader = new ScheduledReloader(List.of(dataset))) {
+        try (ScheduledReloader reloader = new ScheduledReloader()) {
+            reloader.register("default", new DirectPythonSourceConfig(src), cfg, (dc, interp) -> {});
             reloader.start();
             src.switchTo("nonexistent_python_dir");   // all subsequent reloads fail
             Thread.sleep(400);                         // >> grace period
@@ -102,8 +100,8 @@ class ScheduledReloaderTest {
     void gracePeriod_zero_neverFails() throws Exception {
         SwitchablePythonSource src = new SwitchablePythonSource("python_hr_v1");
         SchedulerConfig cfg = new SchedulerConfig(Duration.ofMillis(30), Duration.ZERO);
-        DatasetConfig dataset = new DatasetConfig("default", new DirectPythonSourceConfig(src), cfg);
-        try (ScheduledReloader reloader = new ScheduledReloader(List.of(dataset))) {
+        try (ScheduledReloader reloader = new ScheduledReloader()) {
+            reloader.register("default", new DirectPythonSourceConfig(src), cfg, (dc, interp) -> {});
             reloader.start();
             src.switchTo("nonexistent_python_dir");
             Thread.sleep(400);
@@ -116,14 +114,39 @@ class ScheduledReloaderTest {
         SwitchablePythonSource src = new SwitchablePythonSource("python_hr_v1");
         // Grace period: 300ms; cause errors for ~80ms, then recover
         SchedulerConfig cfg = new SchedulerConfig(Duration.ofMillis(30), Duration.ofMillis(300));
-        DatasetConfig dataset = new DatasetConfig("default", new DirectPythonSourceConfig(src), cfg);
-        try (ScheduledReloader reloader = new ScheduledReloader(List.of(dataset))) {
+        try (ScheduledReloader reloader = new ScheduledReloader()) {
+            reloader.register("default", new DirectPythonSourceConfig(src), cfg, (dc, interp) -> {});
             reloader.start();
             src.switchTo("nonexistent_python_dir");
             Thread.sleep(80);                     // partial error streak, << grace
             src.switchTo("python_hr_v1");         // recover
             Thread.sleep(200);                    // enough ticks to confirm no fatal error
             assertDoesNotThrow(reloader::checkForFatalError);
+        }
+    }
+
+    @Test
+    void callback_firedOnInitialLoad() throws Exception {
+        AtomicInteger count = new AtomicInteger();
+        try (ScheduledReloader reloader = new ScheduledReloader()) {
+            reloader.register("default", new ResourceSourceConfig("python_hr_v1"), INTERVAL,
+                (cfg, interp) -> count.incrementAndGet());
+            reloader.start();
+            assertEquals(1, count.get(), "callback fires exactly once on initial load");
+        }
+    }
+
+    @Test
+    void callback_notFiredOnUnchangedReload() throws Exception {
+        AtomicInteger count = new AtomicInteger();
+        try (ScheduledReloader reloader = new ScheduledReloader()) {
+            reloader.register("default", new ResourceSourceConfig("python_hr_v1"),
+                new SchedulerConfig(Duration.ofMillis(50)),
+                (cfg, interp) -> count.incrementAndGet());
+            reloader.start();
+            assertEquals(1, count.get(), "callback fires once after initial load");
+            Thread.sleep(200);   // several background ticks, source unchanged
+            assertEquals(1, count.get(), "callback not fired again on unchanged source");
         }
     }
 }

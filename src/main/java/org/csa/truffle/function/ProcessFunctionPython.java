@@ -3,9 +3,7 @@ package org.csa.truffle.function;
 import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.Collector;
-import org.csa.truffle.graal.GraalPyInterpreter;
 import org.csa.truffle.graal.reload.DatasetConfig;
-import org.csa.truffle.graal.reload.ReloadResult;
 import org.csa.truffle.graal.reload.ScheduledReloader;
 import org.csa.truffle.graal.reload.SchedulerConfig;
 import org.csa.truffle.graal.source.PythonSourceConfig;
@@ -15,7 +13,6 @@ import org.graalvm.polyglot.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -38,9 +35,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
     private final String activeDatasetId;
 
     private transient ScheduledReloader reloader;
-    private transient GraalPyInterpreter activeInterpreter;
-    private transient List<Map.Entry<String, Value>> pyProcessElements;
-    private transient long lastGeneration = -1;
+    private transient volatile List<Map.Entry<String, Value>> pyProcessElements;
 
     // -------------------------------------------------------------------------
     // Constructors
@@ -83,11 +78,16 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
     @Override
     public void open(OpenContext openContext) throws Exception {
         log.info("Opening: loading Python scripts");
-        reloader = new ScheduledReloader(datasetConfigs);
-        reloader.start();   // synchronous initial reload + schedules background reloads
-        activeInterpreter = reloader.getInterpreter(activeDatasetId);
-        pyProcessElements = activeInterpreter.getNamedMembers("process_element");
-        lastGeneration    = activeInterpreter.getGeneration();
+        reloader = new ScheduledReloader();
+        for (DatasetConfig cfg : datasetConfigs) {
+            reloader.register(cfg.id(), cfg.sourceConfig(), cfg.schedulerConfig(),
+                (datasetId, datasetStatus, interpreter) -> {
+                    if (datasetId.equals(activeDatasetId)) {
+                        pyProcessElements = interpreter.getNamedMembers("process_element");
+                    }
+                });
+        }
+        reloader.start();   // fires callback synchronously → pyProcessElements is set
         log.debug("Loaded {} process_element function(s)", pyProcessElements.size());
     }
 
@@ -104,11 +104,6 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
     @Override
     public void processElement(String line, Context ctx, Collector<String> out) {
         reloader.checkForFatalErrorById(activeDatasetId);
-        long gen = activeInterpreter.getGeneration();
-        if (gen != lastGeneration) {
-            pyProcessElements = activeInterpreter.getNamedMembers("process_element");
-            lastGeneration = gen;
-        }
         for (Map.Entry<String, Value> entry : pyProcessElements) {
             try {
                 entry.getValue().execute(line, out);
@@ -117,23 +112,6 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
                         "Python error in '" + entry.getKey() + "' processing line: " + line, e);
                 log.error("Python execution failed in file '{}': {}", entry.getKey(), e.getMessage(), wrapped);
             }
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // Manual hot-reload
-    // -------------------------------------------------------------------------
-
-    /**
-     * Hot-reloads Python scripts from the active dataset's source.
-     */
-    public void reload() throws IOException {
-        log.info("Manual hot-reload triggered");
-        ReloadResult r = activeInterpreter.reload();
-        if (r.changed()) {
-            log.info("Manual hot-reload complete: data changed");
-        } else {
-            log.debug("Manual hot-reload: no changes detected");
         }
     }
 }

@@ -8,7 +8,7 @@ import java.time.Instant;
  * <p>All fields are package-private so {@code ScheduledReloader} can write them directly.
  * All accessor methods are public for external observation.
  */
-public class ReloaderStatus {
+public class DatasetStatus {
 
     volatile Instant lastCheckedAt;            // null until first check
     volatile Instant lastChangedAt;            // null until first change
