@@ -1,6 +1,6 @@
-package org.csa.truffle.graal.source.git;
+package org.csa.truffle.loader.source.git;
 
-import org.csa.truffle.graal.source.PythonSourceConfig;
+import org.csa.truffle.loader.source.FileSourceConfig;
 
 /**
  * @param repoUrl   e.g. {@code https://github.com/owner/repo}
@@ -12,5 +12,5 @@ import org.csa.truffle.graal.source.PythonSourceConfig;
 public record GitSourceConfig(
         String repoUrl, String directory, String branch,
         String token, GitForgeType forge
-) implements PythonSourceConfig {
+) implements FileSourceConfig {
 }

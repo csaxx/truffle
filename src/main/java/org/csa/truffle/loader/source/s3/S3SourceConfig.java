@@ -1,6 +1,6 @@
-package org.csa.truffle.graal.source.s3;
+package org.csa.truffle.loader.source.s3;
 
-import org.csa.truffle.graal.source.PythonSourceConfig;
+import org.csa.truffle.loader.source.FileSourceConfig;
 
 /**
  * @param bucket      S3 bucket name
@@ -14,7 +14,7 @@ public record S3SourceConfig(
         String bucket, String prefix,
         String region, String endpointUrl,
         String accessKeyId, String secretKey
-) implements PythonSourceConfig {
+) implements FileSourceConfig {
 
     /**
      * AWS S3 with the default credential chain.

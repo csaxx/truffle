@@ -1,12 +1,12 @@
-package org.csa.truffle.graal.source;
+package org.csa.truffle.loader.source;
 
 import org.csa.truffle.graal.GraalPyInterpreter;
-import org.csa.truffle.graal.source.file.FilePythonSource;
+import org.csa.truffle.loader.source.file.FileSystemSource;
 
 import java.io.Closeable;
 import java.io.IOException;
 import java.time.Instant;
-import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Optional;
 
 /**
@@ -14,12 +14,15 @@ import java.util.Optional;
  * Implementations may load from classpath resources, the filesystem,
  * a database, or an in-memory map.
  */
-public interface PythonSource extends Closeable {
+public interface FileSource extends Closeable {
 
     /**
-     * Returns the ordered list of Python filenames to load.
+     * Returns an ordered map of Python filenames to their modification timestamps.
+     * Insertion order matches the execution order declared in {@code index.txt}.
+     * The value is {@link Optional#empty()} if the source cannot determine the
+     * modification time for a particular file.
      */
-    List<String> listFiles() throws IOException;
+    LinkedHashMap<String, Optional<Instant>> listFiles() throws IOException;
 
     /**
      * Returns the source code of the named file.
@@ -27,18 +30,8 @@ public interface PythonSource extends Closeable {
     String readFile(String name) throws IOException;
 
     /**
-     * Returns the most recent modification timestamp across all currently listed files,
-     * or {@link Optional#empty()} if the source cannot determine this.
-     * Called by {@link GraalPyInterpreter} at the end of each reload to populate
-     * {@link org.csa.truffle.graal.reload.ReloadResult#dataAge()}.
-     */
-    default Optional<Instant> getDataAge() throws IOException {
-        return Optional.empty();
-    }
-
-    /**
      * Called once by {@link GraalPyInterpreter} after construction.
-     * Implementations that can detect changes (e.g. {@link FilePythonSource})
+     * Implementations that can detect changes (e.g. {@link FileSystemSource})
      * store the callback and invoke it when a change is detected.
      * The default is a no-op (pull-only sources ignore it).
      */

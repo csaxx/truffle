@@ -1,7 +1,7 @@
-package org.csa.truffle.graal.source.git;
+package org.csa.truffle.loader.source.git;
 
 import org.apache.commons.lang3.StringUtils;
-import org.csa.truffle.graal.source.PythonSource;
+import org.csa.truffle.loader.source.FileSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -11,10 +11,12 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Optional;
 
 /**
- * {@link PythonSource} that fetches Python files from a Git repository
+ * {@link FileSource} that fetches Python files from a Git repository
  * without cloning. Supports GitHub (github.com), GitLab (gitlab.com or
  * self-hosted), and Gitea / Forgejo (self-hosted). Files are fetched one
  * at a time via raw-content HTTP URLs; only {@code index.txt} and the
@@ -37,9 +39,9 @@ import java.util.List;
  *
  * <p>Pass {@code null} as the token for public repositories.
  */
-public class GitPythonSource implements PythonSource {
+public class GitSource implements FileSource {
 
-    private static final Logger log = LoggerFactory.getLogger(GitPythonSource.class);
+    private static final Logger log = LoggerFactory.getLogger(GitSource.class);
 
     private final HttpClient http;
     private final String rawBaseUrl;   // {provider-raw-prefix}/{branch}
@@ -52,8 +54,8 @@ public class GitPythonSource implements PythonSource {
      * or Forgejo instances, or GitLab instances that do not match the
      * auto-detection heuristic).
      */
-    public GitPythonSource(String repoUrl, String directory, String branch,
-                           String token, GitForgeType gitForgeType) {
+    public GitSource(String repoUrl, String directory, String branch,
+                     String token, GitForgeType gitForgeType) {
         this.directory = directory;
         this.token = token;
         this.rawBaseUrl = buildRawBase(repoUrl, branch, gitForgeType);
@@ -69,7 +71,7 @@ public class GitPythonSource implements PythonSource {
      * hosts fall back to {@link GitForgeType#GITLAB}. Use the 5-arg constructor
      * to explicitly specify {@link GitForgeType#GITEA} for Gitea / Forgejo hosts.
      */
-    public GitPythonSource(String repoUrl, String directory, String branch, String token) {
+    public GitSource(String repoUrl, String directory, String branch, String token) {
         this(repoUrl, directory, branch, token, detectForge(repoUrl));
     }
 
@@ -96,11 +98,13 @@ public class GitPythonSource implements PythonSource {
     }
 
     @Override
-    public List<String> listFiles() throws IOException {
-        return fetch(directory + "/index.txt").lines()
+    public LinkedHashMap<String, Optional<Instant>> listFiles() throws IOException {
+        LinkedHashMap<String, Optional<Instant>> result = new LinkedHashMap<>();
+        fetch(directory + "/index.txt").lines()
                 .map(String::trim)
                 .filter(l -> !l.isEmpty() && !l.startsWith("#"))
-                .toList();
+                .forEach(name -> result.put(name, Optional.empty()));
+        return result;
     }
 
     @Override

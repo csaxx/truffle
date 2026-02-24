@@ -1,6 +1,6 @@
-package org.csa.truffle.graal.source.file;
+package org.csa.truffle.loader.source.file;
 
-import org.csa.truffle.graal.source.PythonSource;
+import org.csa.truffle.loader.source.FileSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -8,11 +8,12 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
 
 /**
- * {@link PythonSource} that reads Python files from a local directory and
+ * {@link FileSource} that reads Python files from a local directory and
  * watches it for changes via {@link WatchService}.
  *
  * <p>Construct with the directory path; {@link #setChangeListener(Runnable)} is
@@ -27,9 +28,9 @@ import java.util.Optional;
  *   }
  * </pre>
  */
-public class FilePythonSource implements PythonSource {
+public class FileSystemSource implements FileSource {
 
-    private static final Logger log = LoggerFactory.getLogger(FilePythonSource.class);
+    private static final Logger log = LoggerFactory.getLogger(FileSystemSource.class);
     private static final long DEBOUNCE_MS = 100;
 
     private final Path directory;
@@ -38,33 +39,34 @@ public class FilePythonSource implements PythonSource {
     private WatchService watchService;
     private Thread watcherThread;
 
-    public FilePythonSource(Path directory, boolean watch) {
+    public FileSystemSource(Path directory, boolean watch) {
         this.directory = directory;
         this.watch = watch;
     }
 
     @Override
-    public List<String> listFiles() throws IOException {
+    public LinkedHashMap<String, Optional<Instant>> listFiles() throws IOException {
         Path index = directory.resolve("index.txt");
-        return Files.readString(index, StandardCharsets.UTF_8).lines()
+        List<String> names = Files.readString(index, StandardCharsets.UTF_8).lines()
                 .map(String::trim)
                 .filter(l -> !l.isEmpty() && !l.startsWith("#"))
                 .toList();
+        LinkedHashMap<String, Optional<Instant>> result = new LinkedHashMap<>();
+        for (String name : names) {
+            Instant mtime;
+            try {
+                mtime = Files.getLastModifiedTime(directory.resolve(name)).toInstant();
+            } catch (IOException e) {
+                mtime = null;
+            }
+            result.put(name, Optional.ofNullable(mtime));
+        }
+        return result;
     }
 
     @Override
     public String readFile(String name) throws IOException {
         return Files.readString(directory.resolve(name), StandardCharsets.UTF_8);
-    }
-
-    @Override
-    public Optional<Instant> getDataAge() throws IOException {
-        Instant latest = null;
-        for (String name : listFiles()) {
-            Instant t = Files.getLastModifiedTime(directory.resolve(name)).toInstant();
-            if (latest == null || t.isAfter(latest)) latest = t;
-        }
-        return Optional.ofNullable(latest);
     }
 
     /**

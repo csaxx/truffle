@@ -1,7 +1,7 @@
-package org.csa.truffle.graal.source.s3;
+package org.csa.truffle.loader.source.s3;
 
 import org.apache.commons.lang3.StringUtils;
-import org.csa.truffle.graal.source.PythonSource;
+import org.csa.truffle.loader.source.FileSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.ResponseBytes;
@@ -12,11 +12,12 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
 
 /**
- * {@link PythonSource} that loads Python files from an S3-compatible object store.
+ * {@link FileSource} that loads Python files from an S3-compatible object store.
  * Works with AWS S3 and MinIO. The caller constructs and configures the
  * {@link S3Client}; this class only performs GetObject calls.
  *
@@ -37,15 +38,15 @@ import java.util.Optional;
  *   new S3PythonSource(s3, "my-bucket", "python");
  * </pre>
  */
-public class S3PythonSource implements PythonSource {
+public class S3Source implements FileSource {
 
-    private static final Logger log = LoggerFactory.getLogger(S3PythonSource.class);
+    private static final Logger log = LoggerFactory.getLogger(S3Source.class);
 
     private final S3Client s3;
     private final String bucket;
     private final String prefix; // never ends with '/', may be empty
 
-    public S3PythonSource(S3Client s3, String bucket, String prefix) {
+    public S3Source(S3Client s3, String bucket, String prefix) {
         this.s3 = s3;
         this.bucket = bucket;
         // Normalise: strip trailing slashes
@@ -55,31 +56,27 @@ public class S3PythonSource implements PythonSource {
     }
 
     @Override
-    public List<String> listFiles() throws IOException {
-        return getObject("index.txt").lines()
+    public LinkedHashMap<String, Optional<Instant>> listFiles() throws IOException {
+        List<String> names = getObject("index.txt").lines()
                 .map(String::trim)
                 .filter(l -> !l.isEmpty() && !l.startsWith("#"))
                 .toList();
+        LinkedHashMap<String, Optional<Instant>> result = new LinkedHashMap<>();
+        try {
+            for (String name : names) {
+                String key = prefix.isEmpty() ? name : prefix + "/" + name;
+                Instant t = s3.headObject(r -> r.bucket(bucket).key(key)).lastModified();
+                result.put(name, Optional.ofNullable(t));
+            }
+        } catch (S3Exception e) {
+            throw new IOException("S3 error fetching metadata: " + e.getMessage(), e);
+        }
+        return result;
     }
 
     @Override
     public String readFile(String name) throws IOException {
         return getObject(name);
-    }
-
-    @Override
-    public Optional<Instant> getDataAge() throws IOException {
-        Instant latest = null;
-        try {
-            for (String name : listFiles()) {
-                String key = prefix.isEmpty() ? name : prefix + "/" + name;
-                Instant t = s3.headObject(r -> r.bucket(bucket).key(key)).lastModified();
-                if (t != null && (latest == null || t.isAfter(latest))) latest = t;
-            }
-        } catch (S3Exception e) {
-            throw new IOException("S3 error fetching data age: " + e.getMessage(), e);
-        }
-        return Optional.ofNullable(latest);
     }
 
     private String getObject(String name) throws IOException {

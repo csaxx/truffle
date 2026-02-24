@@ -1,32 +1,36 @@
-package org.csa.truffle.graal.source.resource;
+package org.csa.truffle.loader.source.resource;
 
 import org.apache.commons.io.IOUtils;
-import org.csa.truffle.graal.source.PythonSource;
+import org.csa.truffle.loader.source.FileSource;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Optional;
 
 /**
- * {@link PythonSource} that loads Python files from classpath resources.
+ * {@link FileSource} that loads Python files from classpath resources.
  * The directory must contain an {@code index.txt} listing filenames (one per line;
  * lines starting with {@code #} and blank lines are ignored).
  */
-public class ResourcePythonSource implements PythonSource {
+public class ResourceSource implements FileSource {
 
     private final String directory;
 
-    public ResourcePythonSource(String directory) {
+    public ResourceSource(String directory) {
         this.directory = directory;
     }
 
     @Override
-    public List<String> listFiles() throws IOException {
-        return readResource(directory + "/index.txt").lines()
+    public LinkedHashMap<String, Optional<Instant>> listFiles() throws IOException {
+        LinkedHashMap<String, Optional<Instant>> result = new LinkedHashMap<>();
+        readResource(directory + "/index.txt").lines()
                 .map(String::trim)
                 .filter(l -> !l.isEmpty() && !l.startsWith("#"))
-                .toList();
+                .forEach(name -> result.put(name, Optional.empty()));
+        return result;
     }
 
     @Override

@@ -1,7 +1,7 @@
-package org.csa.truffle.graal.source.git;
+package org.csa.truffle.loader.source.git;
 
 /**
- * Identifies the Git forge type so {@link GitPythonSource} can build
+ * Identifies the Git forge type so {@link GitSource} can build
  * the correct raw-content URL. Forgejo uses the same URL format as Gitea.
  */
 public enum GitForgeType {

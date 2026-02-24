@@ -1,7 +1,6 @@
 package org.csa.truffle.graal;
 
-import org.csa.truffle.graal.reload.ReloadResult;
-import org.csa.truffle.graal.source.PythonSource;
+import org.csa.truffle.loader.source.FileSource;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Source;
@@ -15,6 +14,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Manages the lifecycle of per-file GraalPy execution contexts.
@@ -37,11 +37,12 @@ public class GraalPyInterpreter implements AutoCloseable {
      */
     private final HashMap<String, GraalPyContext> fileContexts = new LinkedHashMap<>();
 
-    private final PythonSource source;
+    private final FileSource source;
 
     private volatile long generation = 0;
+    private volatile Optional<Instant> lastDataAge = Optional.empty();
 
-    public GraalPyInterpreter(PythonSource source) {
+    public GraalPyInterpreter(FileSource source) {
         this.source = source;
         source.setChangeListener(this::onSourceChanged);
         log.debug("Initialized with source: {}", source.getClass().getSimpleName());
@@ -73,12 +74,9 @@ public class GraalPyInterpreter implements AutoCloseable {
      * in index.txt order. Fetching name and value in a single pass is safe
      * against concurrent reloads.
      */
-    public List<Map.Entry<String, Value>> getNamedMembers(String memberName) {
-        return fileContexts.entrySet().stream()
-                .map(e -> Map.entry(
-                        e.getKey(),
-                        e.getValue().context().getBindings("python").getMember(memberName)))
-                .toList();
+    public Map<GraalPyContext, Value> getNamedMembers(String memberName) {
+        return fileContexts.values().stream()
+                .collect(Collectors.toMap(c -> c, c -> c.context().getBindings("python").getMember(memberName)));
     }
 
     /**
@@ -89,16 +87,19 @@ public class GraalPyInterpreter implements AutoCloseable {
     }
 
     /**
-     * Queries the injected {@link PythonSource} and reconciles per-file contexts:
+     * Queries the injected {@link FileSource} and reconciles per-file contexts:
      * removed files get their Context closed, new/changed files get a fresh Context.
      *
-     * @return a {@link ReloadResult} bundling whether anything changed, the reload
-     * timestamp, and the latest file modification age from the source.
+     * @return {@code true} if any file was added, removed, or changed; {@code false} otherwise.
      */
-    public synchronized ReloadResult reload() throws IOException {
-        Instant now = Instant.now();
-        List<String> currentNames = source.listFiles();
+    public synchronized boolean reload() throws IOException {
+        Map<String, Optional<Instant>> fileList = source.listFiles();
+        List<String> currentNames = new ArrayList<>(fileList.keySet());
         log.debug("Reload started; source lists {} file(s)", currentNames.size());
+        lastDataAge = fileList.values().stream()
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .max(Comparator.naturalOrder());
 
         // Read contents and compute hashes for all current files
         Map<String, String> currentContents = new LinkedHashMap<>();
@@ -144,7 +145,7 @@ public class GraalPyInterpreter implements AutoCloseable {
 
         if (!changed) {
             log.debug("Reload complete: no changes detected");
-            return new ReloadResult(false, now, source.getDataAge());
+            return false;
         }
 
         // Rebuild map in currentNames order (LinkedHashMap re-insertion)
@@ -157,7 +158,16 @@ public class GraalPyInterpreter implements AutoCloseable {
 
         generation++;
         log.debug("Reload complete: generation advanced to {}", generation);
-        return new ReloadResult(true, now, source.getDataAge());
+        return true;
+    }
+
+    /**
+     * Returns the most recent modification timestamp across all files from the last
+     * {@link #reload()} call, or {@link Optional#empty()} if the source does not
+     * provide modification times.
+     */
+    public Optional<Instant> getDataAge() {
+        return lastDataAge;
     }
 
     private void onSourceChanged() {
