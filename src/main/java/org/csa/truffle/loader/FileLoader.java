@@ -10,7 +10,7 @@ import java.time.Instant;
 import java.util.*;
 
 /**
- * Loads and caches the contents of Python files from a {@link FileSource},
+ * Loads and caches the contents of files from a {@link FileSource},
  * using per-file modification timestamps to avoid re-reading unchanged files.
  *
  * <p>Call {@link #load()} to (re)load from the source. On the first call every

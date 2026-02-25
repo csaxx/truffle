@@ -94,29 +94,62 @@ outputs are identical row-by-row. This ensures Python parity with the Java refer
 ### GraalPyInterpreter
 
 `GraalPyInterpreter` (`src/main/java/org/csa/truffle/graal/GraalPyInterpreter.java`)
-manages the lifecycle of GraalPy execution contexts for all Python files.
+is a pure context manager — it manages the lifecycle of per-file GraalPy execution
+contexts. File loading and change tracking are handled separately by `FileLoader`.
+Construct it by passing a `Map<String, String>` of filename → Python source code.
 
-**Per-file context isolation.** Each `.py` file listed in `python/index.txt` gets its
-own `Context`. This prevents name collisions — two files can both define
-`process_element` without one overwriting the other. All contexts share a single static
-`Engine` (`SHARED_ENGINE`) so compiled ASTs are cached across contexts; the per-file
-overhead is only interpreter state, which is negligible at this scale.
+**`GraalPyContext`** (`src/main/java/org/csa/truffle/graal/GraalPyContext.java`) is a
+class that pairs a GraalPy `Context` with its filename and a `Map<String, Value>` member
+cache. `getMember(String memberName)` returns the cached `Value` for the named Python
+binding, or `null` if the module does not define that name. Results are cached on first
+access via `computeIfAbsent`; a missing member causes a polyglot lookup on each call
+(absent members are the exception, not the norm).
 
-**Index-driven loading.** `python/index.txt` is the authoritative list of files to
-load, in execution order. Lines starting with `#` and blank lines are ignored.
-Files are resolved as classpath resources under `python/`.
+**Per-file context isolation.** Each file gets its own `Context`. This prevents name
+collisions — two files can both define `process_element` without one overwriting the
+other. All contexts share a single static `Engine` (`SHARED_ENGINE`) so compiled ASTs
+are cached across contexts; the per-file overhead is only interpreter state.
 
-**PythonSource abstraction.** `GraalPyInterpreter` does not load files directly.
-It accepts a `PythonSource` (in `org.csa.truffle.graal.source`) at construction time.
-The interface has two methods: `listFiles()` returns the ordered filename list;
-`readFile(name)` returns file content. `reload()` is no-arg and queries the injected source.
-`getDataAge()` returns `Optional<Instant>` — the latest modification timestamp
-across all currently listed files, or `Optional.empty()` if the source cannot
-determine this. Called by `GraalPyInterpreter` at the end of every reload to
-populate `ReloadResult.dataAge()`. `FilePythonSource` implements it via
-`Files.getLastModifiedTime()`; `S3PythonSource` via `HeadObjectRequest`
-(metadata-only, no download). `ResourcePythonSource` and `GitPythonSource`
-inherit the no-op default.
+**Constructor.**
+```java
+new GraalPyInterpreter(Map<String, String> fileContents)
+```
+Iteration order of the map determines index order; pass a `LinkedHashMap` for
+deterministic ordering. Each entry is evaluated into its own GraalPy `Context`
+immediately at construction time.
+
+**API.**
+- `getLoadedFileNames()` — returns filenames in index order.
+- `getMember(filename, memberName)` — returns the cached `Value` for the named member
+  in the given file, or `null` if the file is not loaded or does not define that member.
+- `getMembers(memberName)` — returns one `Value` per file that defines `memberName`,
+  in index order; files that do not define the member are omitted.
+- `execute(filename, memberName, args...)` — calls the named function in the given file;
+  no-op if the file or member is absent.
+- `executeAll(memberName, args...)` — calls the named function in every file that defines
+  it, in index order.
+- `close()` — closes all per-file `Context`s. Use try-with-resources.
+
+**Adding a new Python transform file.** Create the `.py` file under
+`src/main/resources/python/` with a `process_element(line, out)` function, then add
+its filename to `python/index.txt`. No Java changes are required. The function receives
+the raw CSV line as a string and the Flink `Collector<String>`; call `out.collect(...)`
+to emit output rows.
+
+### PythonSource implementations
+
+These classes (in `org.csa.truffle.graal.source`) are used by `ProcessFunctionPython`
+via `PythonSourceFactory` to supply Python file contents. They are separate from the
+`FileSource` hierarchy used by `FileLoader`.
+
+**`PythonSource` interface.** `listFiles()` returns the ordered filename list;
+`readFile(name)` returns file content. `getDataAge()` returns `Optional<Instant>` —
+the latest modification timestamp across all currently listed files, or
+`Optional.empty()` if the source cannot determine this. `FilePythonSource` implements
+it via `Files.getLastModifiedTime()`; `S3PythonSource` via `HeadObjectRequest`
+(metadata-only, no download). `ResourcePythonSource` and `GitPythonSource` inherit
+the no-op default.
+
 Four implementations ship with the project, split into subpackages:
 
 | Implementation (package) | Source | Config record |
@@ -127,18 +160,16 @@ Four implementations ship with the project, split into subpackages:
 | `file.FilePythonSource` | Local filesystem + WatchService | `new FileSourceConfig(path, watch)` |
 
 **Config records and `PythonSourceFactory`.** `PythonSourceConfig` is a marker interface
-(in `org.csa.truffle.graal.source`) extended by the four config record types above. All
-record components are primitives, Strings, or enums — serialization is guaranteed.
-`PythonSourceFactory.create(PythonSourceConfig)` is a `final class` with a static factory
-method; it uses a `switch` on the concrete type to instantiate the correct `PythonSource`. S3 credential
-wiring and `Path` conversion live here, keeping the source classes free of construction
-details. `ProcessFunctionPython` stores a `PythonSourceConfig` (not a lambda); `open()`
-calls the factory to build the source. The default constructor uses
-`new ResourceSourceConfig("python")`.
+extended by the four config record types above. All record components are primitives,
+Strings, or enums — serialization is guaranteed. `PythonSourceFactory.create(PythonSourceConfig)`
+is a `final class` with a static factory method; it uses a `switch` on the concrete type
+to instantiate the correct `PythonSource`. S3 credential wiring and `Path` conversion live
+here, keeping the source classes free of construction details. `ProcessFunctionPython` stores
+a `PythonSourceConfig` (not a lambda); `open()` calls the factory to build the source. The
+default constructor uses `new ResourceSourceConfig("python")`.
 
 **`resource.ResourcePythonSource`** reads `{directory}/index.txt` from the classpath, then
-loads each listed `.py` file from `{directory}/{name}`. Used in production by
-`ProcessFunctionPython` and in tests via `SwitchablePythonSource`.
+loads each listed `.py` file from `{directory}/{name}`.
 
 **`resource.GitPythonSource`** fetches `{directory}/index.txt` and each listed file
 directly from a Git repository via raw-content HTTP — no clone required. The forge is
@@ -165,56 +196,21 @@ the AWS SDK directly.
 a `WatchService` thread. When watching, `setChangeListener` starts a daemon thread that
 monitors the directory for `ENTRY_CREATE`, `ENTRY_MODIFY`, and `ENTRY_DELETE` events.
 When a `.py` file or `index.txt` changes, the watcher debounces 100 ms then calls the
-registered callback, which triggers `GraalPyInterpreter.reload()` automatically — no
-manual polling needed. Call `close()` (or use try-with-resources) to stop the watcher thread.
+registered callback. Call `close()` (or use try-with-resources) to stop the watcher thread.
 
 **Push-notification protocol** (`setChangeListener`). `PythonSource` extends `Closeable`
 and has two default methods: `setChangeListener(Runnable onChanged)` (no-op) and `close()`
-(no-op). `GraalPyInterpreter` calls `setChangeListener` in its constructor, passing a
-callback that invokes `reload()`. Sources that can detect changes (`FilePythonSource`)
-override `setChangeListener` to start a watcher; pull-only sources (`ResourcePythonSource`,
-`GitPythonSource`, `S3PythonSource`) inherit the no-op default and remain unchanged.
-`GraalPyInterpreter.close()` also calls `source.close()` to stop any watcher thread. `FileLoader` follows the same protocol — see `### FileLoader` below.
-
-**Generation counter.** `GraalPyInterpreter` exposes `getGeneration()` — a `volatile long`
-incremented on every successful reload that detected changes. `ProcessFunctionPython`
-caches `lastGeneration` and lazily refreshes its `Value` references at the top of
-`processElement` when the generation has advanced, avoiding stale references to closed
-Python contexts after a background reload.
+(no-op). Sources that can detect changes (`FilePythonSource`) override `setChangeListener`
+to start a watcher; pull-only sources inherit the no-op default.
 
 **Adding a new `PythonSource`.** Implement `listFiles()` and `readFile(name)` in a new
 class (place it in an appropriate `graal/source/` subpackage). Also create a config
 record implementing `PythonSourceConfig`, add a corresponding `case` to
 `PythonSourceFactory.create()`, and pass the config to
 `new ProcessFunctionPython(yourConfig)`. No other changes needed.
-If your source can efficiently retrieve file modification times (e.g. a database column
-or object-store `HeadObject`), also override `getDataAge()` to return
-`Optional.of(latestInstant)`. Otherwise inherit the no-op default, which causes
-`ReloadResult.dataAge()` to be empty for that source.
-
-**`getMembers(String memberName)`** streams over all file contexts in index order and
-returns a `List<Value>` — one entry per file — for the named Python binding. The caller
-(e.g. `ProcessFunctionPython`) iterates the list to invoke every file's function.
-
-**Hot reload.** `reload()` re-reads `index.txt`, computes SHA-256 hashes of each file's
-content, and reconciles:
-- Removed files → their `Context` is closed and dropped from the map.
-- New or changed files → old `Context` closed (if any), new `Context` created and
-  evaluated. The engine cache means unchanged peer files pay no recompile cost.
-- Unchanged files → their `Context` is reused as-is.
-Returns a `ReloadResult` record with three fields:
-- `changed` — `true` if any file was added, removed, or changed.
-- `reloadedAt` — the `Instant` captured at the top of the reload, before any I/O.
-- `dataAge` — `Optional<Instant>` from `PythonSource.getDataAge()` — the latest
-  file mtime across all loaded files; empty for JAR/Git sources.
-
-Callers use `result.changed()` to decide whether to re-fetch `Value` references.
-
-**Adding a new Python transform file.** Create the `.py` file under
-`src/main/resources/python/` with a `process_element(line, out)` function, then add
-its filename to `python/index.txt`. No Java changes are required. The function receives
-the raw CSV line as a string and the Flink `Collector<String>`; call `out.collect(...)`
-to emit output rows.
+If your source can efficiently retrieve file modification times, also override
+`getDataAge()` to return `Optional.of(latestInstant)`. Otherwise inherit the no-op
+default, which causes `ReloadResult.dataAge()` to be empty for that source.
 
 ### FileLoader
 
@@ -237,21 +233,20 @@ and updates `LoadStatus` on every call regardless of whether a change occurred.
 - `lastErrorAt` / `lastError` / `firstErrorAt` — error streak tracking (same semantics as `ScheduledReloader`).
 
 **Push-notification.** `FileLoader` calls `source.setChangeListener(this::doReloadOnChange)` in
-its constructor, following the same protocol as `GraalPyInterpreter`. When a push-capable source
-fires the listener, `doReloadOnChange` calls `load()` automatically; any `IOException` is caught
-and logged (not propagated, since there is no caller to return to). Pull-only sources inherit the
-no-op default and are unaffected.
+its constructor. When a push-capable source fires the listener, `doReloadOnChange` calls `load()`
+automatically; any `IOException` is caught and logged. Pull-only sources inherit the no-op default
+and are unaffected.
 
 **`close()`** delegates to `source.close()`. Always use try-with-resources.
 
 **Constructors:** `FileLoader(FileSource source)` and `FileLoader(FileSource source, Runnable onChanged)`.
 
-**`FileLoaderTest`** (`src/test/java/org/csa/truffle/loader/FileLoaderTest.java`) covers the same
-case matrix as `GraalPyInterpreterHotReloadTest` (Cases 1–4: removed / added / unchanged / changed
-files; `load()` return value) plus `LoadStatus` field tracking, `onChanged` callback firing, and
-push-notification integration via `NotifyingSource` — an inner test helper that captures the
-registered listener and exposes `triggerChange()` to fire it synchronously without a real watcher.
-Uses `SwitchableFileSource` and the existing `python_hr_v1` / `python_hr_v2` test resources.
+**`FileLoaderTest`** (`src/test/java/org/csa/truffle/loader/FileLoaderTest.java`) covers
+Cases 1–4 (removed / added / unchanged / changed files; `load()` return value), `LoadStatus`
+field tracking, `onChanged` callback firing, and push-notification integration via
+`NotifyingSource` — an inner test helper that captures the registered listener and exposes
+`triggerChange()` to fire it synchronously without a real watcher. Uses `SwitchableFileSource`
+and the existing `python_hr_v1` / `python_hr_v2` test resources.
 
 ### Scheduled reload
 
@@ -266,7 +261,7 @@ period cause `ScheduledReloader` to store a fatal `RuntimeException`; `ProcessFu
 checks for it at the top of every `processElement()` call and re-throws it, failing the Flink task.
 
 **`ReloadResult`** (`src/main/java/org/csa/truffle/graal/reload/ReloadResult.java`)
-is the return type of `GraalPyInterpreter.reload()`. It bundles:
+is the return type of the reload cycle driven by `ScheduledReloader`. It bundles:
 - `changed` (`boolean`) — whether any file changed during this reload.
 - `reloadedAt` (`Instant`) — wall-clock time captured at the start of the reload call.
 - `dataAge` (`Optional<Instant>`) — latest file mtime from `PythonSource.getDataAge()`;
@@ -299,6 +294,10 @@ wraps a `GraalPyInterpreter` and drives periodic polling:
 - `()` — defaults to `new SchedulerConfig(Duration.ofMinutes(5))` + classpath `python/` dir.
 - `(Duration interval)` — convenience overload; wraps in `SchedulerConfig`.
 - `(SchedulerConfig schedulerConfig, PythonSourceConfig sourceConfig)` — primary constructor.
+
+> **Note:** `ScheduledReloader` and `ProcessFunctionPython` are pending a follow-up refactor
+> to wire through `FileLoader` + `GraalPyInterpreter(Map)` and will not compile until that
+> work is complete.
 
 ### Adding a new ProcessFunction
 

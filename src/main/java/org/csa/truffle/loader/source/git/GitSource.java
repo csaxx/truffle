@@ -16,7 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.Optional;
 
 /**
- * {@link FileSource} that fetches Python files from a Git repository
+ * {@link FileSource} that fetches  files from a Git repository
  * without cloning. Supports GitHub (github.com), GitLab (gitlab.com or
  * self-hosted), and Gitea / Forgejo (self-hosted). Files are fetched one
  * at a time via raw-content HTTP URLs; only {@code index.txt} and the
@@ -24,17 +24,17 @@ import java.util.Optional;
  *
  * <p><b>GitHub example:</b>
  * <pre>
- *   new GitPythonSource("https://github.com/owner/repo", "python", "main", "ghp_...");
+ *   new GitSource("https://github.com/owner/repo", "", "main", "ghp_...");
  * </pre>
  *
  * <p><b>GitLab example:</b>
  * <pre>
- *   new GitPythonSource("https://gitlab.com/group/repo", "python", "main", "glpat-...");
+ *   new GitSource("https://gitlab.com/group/repo", "", "main", "glpat-...");
  * </pre>
  *
  * <p><b>Gitea / Forgejo example:</b>
  * <pre>
- *   new GitPythonSource("https://gitea.example.com/user/repo", "python", "main", token, ForgeType.GITEA);
+ *   new GitSource("https://gitea.example.com/user/repo", "", "main", token, ForgeType.GITEA);
  * </pre>
  *
  * <p>Pass {@code null} as the token for public repositories.
@@ -49,7 +49,7 @@ public class GitSource implements FileSource {
     private final String token;        // nullable
 
     /**
-     * Creates a {@code GitPythonSource} with an explicit forge type.
+     * Creates a {@code GitSource} with an explicit forge type.
      * Use this constructor when the host cannot be auto-detected (e.g. Gitea
      * or Forgejo instances, or GitLab instances that do not match the
      * auto-detection heuristic).
@@ -66,7 +66,7 @@ public class GitSource implements FileSource {
     }
 
     /**
-     * Creates a {@code GitPythonSource} with auto-detected forge type.
+     * Creates a {@code GitSource} with auto-detected forge type.
      * {@code github.com} is detected as {@link GitForgeType#GITHUB}; all other
      * hosts fall back to {@link GitForgeType#GITLAB}. Use the 5-arg constructor
      * to explicitly specify {@link GitForgeType#GITEA} for Gitea / Forgejo hosts.

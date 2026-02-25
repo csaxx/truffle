@@ -43,7 +43,7 @@ public final class FileSourceFactory {
                             AwsBasicCredentials.create(c.accessKeyId(), c.secretKey())));
                 yield new S3Source(b.build(), c.bucket(), c.prefix());
             }
-            default -> throw new IllegalArgumentException("Unknown PythonSourceConfig type: " + config.getClass().getName());
+            default -> throw new IllegalArgumentException("Unknown SourceConfig type: " + config.getClass().getName());
         };
     }
 }

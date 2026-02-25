@@ -17,7 +17,7 @@ import java.util.Optional;
 public interface FileSource extends Closeable {
 
     /**
-     * Returns an ordered map of Python filenames to their modification timestamps.
+     * Returns an ordered map of  filenames to their modification timestamps.
      * Insertion order matches the execution order declared in {@code index.txt}.
      * The value is {@link Optional#empty()} if the source cannot determine the
      * modification time for a particular file.

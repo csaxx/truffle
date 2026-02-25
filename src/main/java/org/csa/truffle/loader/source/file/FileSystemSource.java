@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * {@link FileSource} that reads Python files from a local directory and
+ * {@link FileSource} that reads  files from a local directory and
  * watches it for changes via {@link WatchService}.
  *
  * <p>Construct with the directory path; {@link #setChangeListener(Runnable)} is
@@ -21,7 +21,7 @@ import java.util.Optional;
  * starts a daemon watcher thread.
  *
  * <pre>
- *   try (var src = new FilePythonSource(Path.of("/opt/scripts/python"));
+ *   try (var src = new FileSource(Path.of("/opt/scripts/"));
  *        var interp = new GraalPyInterpreter(src)) {
  *       interp.reload();
  *       // watcher now fires automatic reloads on file changes
@@ -87,7 +87,7 @@ public class FileSystemSource implements FileSource {
             log.error("Could not start file watcher: {}", e.getMessage());
             return;
         }
-        watcherThread = new Thread(this::watchLoop, "FilePythonSource-watcher");
+        watcherThread = new Thread(this::watchLoop, "FileSource-watcher");
         watcherThread.setDaemon(true);
         watcherThread.start();
         log.debug("Watcher thread started: {}", watcherThread.getName());

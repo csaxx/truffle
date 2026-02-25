@@ -11,7 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.Optional;
 
 /**
- * {@link FileSource} that loads Python files from classpath resources.
+ * {@link FileSource} that loads  files from classpath resources.
  * The directory must contain an {@code index.txt} listing filenames (one per line;
  * lines starting with {@code #} and blank lines are ignored).
  */

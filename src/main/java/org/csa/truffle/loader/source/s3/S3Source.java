@@ -17,13 +17,13 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * {@link FileSource} that loads Python files from an S3-compatible object store.
+ * {@link FileSource} that loads  files from an S3-compatible object store.
  * Works with AWS S3 and MinIO. The caller constructs and configures the
  * {@link S3Client}; this class only performs GetObject calls.
  *
  * <p><b>AWS example:</b>
  * <pre>
- *   new S3PythonSource(S3Client.create(), "my-bucket", "python");
+ *   new S3Source(S3Client.create(), "my-bucket", "");
  * </pre>
  *
  * <p><b>MinIO example:</b>
@@ -35,7 +35,7 @@ import java.util.Optional;
  *           AwsBasicCredentials.create("minioadmin", "minioadmin")))
  *       .forcePathStyle(true)
  *       .build();
- *   new S3PythonSource(s3, "my-bucket", "python");
+ *   new S3Source(s3, "my-bucket", "");
  * </pre>
  */
 public class S3Source implements FileSource {
