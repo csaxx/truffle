@@ -220,9 +220,22 @@ modification timestamps.
 
 **`load()`** (re)reads the file list from `source.listFiles()`. On the first call every file is
 read; on subsequent calls a file is re-read only when its mtime has advanced (or the source cannot
-provide a timestamp). Files removed from `index.txt` are evicted from the cache. Returns `true`
-if any file was added, removed, or had updated content. Fires the `onChanged` callback (if set)
-and updates `LoadStatus` on every call regardless of whether a change occurred.
+provide a timestamp). Files removed from `index.txt` are evicted from the cache. **Never throws**
+— I/O errors are captured and returned in the `LoadResult`. Updates `LoadStatus` on every call
+regardless of outcome.
+
+**`LoadResult`** (`src/main/java/org/csa/truffle/loader/LoadResult.java`) is the return type of
+`load()`. It is a record with four fields:
+- `success` (`boolean`) — `true` when no I/O error occurred.
+- `status` — the loader's `LoadStatus` instance (same reference as `getStatus()`).
+- `fileContents` (`Map<String, String>`) — unmodifiable snapshot in index order; `null` on failure.
+- `error` (`Exception`) — the caught `IOException`; `null` on success.
+
+**`LoadCallback`** (`src/main/java/org/csa/truffle/loader/LoadCallback.java`) is a two-method
+interface fired after every `load()` attempt. Exactly one method is called per invocation:
+- `reloaded(Map<String, String> fileContents, LoadStatus status)` — called on every successful load
+  (whether or not any file changed).
+- `error(LoadStatus status, Exception e)` — called when an I/O error occurs.
 
 **`getFileContents()`** returns a defensive `LinkedHashMap<String, String>` snapshot in index order.
 
@@ -234,19 +247,24 @@ and updates `LoadStatus` on every call regardless of whether a change occurred.
 
 **Push-notification.** `FileLoader` calls `source.setChangeListener(this::doReloadOnChange)` in
 its constructor. When a push-capable source fires the listener, `doReloadOnChange` calls `load()`
-automatically; any `IOException` is caught and logged. Pull-only sources inherit the no-op default
-and are unaffected.
+automatically (no exception handling needed — `load()` never throws). Pull-only sources inherit
+the no-op default and are unaffected.
 
 **`close()`** delegates to `source.close()`. Always use try-with-resources.
 
-**Constructors:** `FileLoader(FileSource source)` and `FileLoader(FileSource source, Runnable onChanged)`.
+**Constructors:** `FileLoader(FileSource source)` and `FileLoader(FileSource source, LoadCallback callback)`.
 
 **`FileLoaderTest`** (`src/test/java/org/csa/truffle/loader/FileLoaderTest.java`) covers
-Cases 1–4 (removed / added / unchanged / changed files; `load()` return value), `LoadStatus`
-field tracking, `onChanged` callback firing, and push-notification integration via
-`NotifyingSource` — an inner test helper that captures the registered listener and exposes
-`triggerChange()` to fire it synchronously without a real watcher. Uses `SwitchableFileSource`
-and the existing `python_hr_v1` / `python_hr_v2` test resources.
+Cases 1–4 (removed / added / unchanged / changed files), `LoadStatus` field tracking, callback
+firing, and push-notification integration via `NotifyingSource` — an inner test helper that
+captures the registered listener and exposes `triggerChange()` to fire it synchronously without a
+real watcher. Uses `SwitchableFileSource` and the existing `python_hr_v1` / `python_hr_v2` test
+resources.
+
+**`FileLoaderResultTest`** (`src/test/java/org/csa/truffle/loader/FileLoaderResultTest.java`)
+exercises `LoadResult` fields and `LoadCallback` dispatch in isolation using `ResourceSource` and
+an inline `FailingSource`. Covers all combinations of success/failure × result fields × callback
+routing (12 tests).
 
 ### Scheduled reload
 
@@ -297,7 +315,10 @@ wraps a `GraalPyInterpreter` and drives periodic polling:
 
 > **Note:** `ScheduledReloader` and `ProcessFunctionPython` are pending a follow-up refactor
 > to wire through `FileLoader` + `GraalPyInterpreter(Map)` and will not compile until that
-> work is complete.
+> work is complete. `pom.xml` excludes both files from compilation (and excludes their tests
+> `ProcessFunctionEquivalenceTest` / `ScheduledReloaderTest` from test compilation) via
+> `<excludes>` / `<testExcludes>` in the compiler plugin. Remove those entries once the
+> refactor is done.
 
 ### Adding a new ProcessFunction
 
