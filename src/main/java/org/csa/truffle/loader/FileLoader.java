@@ -19,9 +19,9 @@ import java.util.*;
  * the source cannot provide a timestamp are always re-read. Files that
  * disappear from {@code index.txt} are evicted from the cache.
  *
- * <p>An optional {@link Runnable} callback supplied at construction time is
- * invoked by {@link #load()} whenever the loaded set changes (additions,
- * removals, or content updates).
+ * <p>An optional {@link LoadCallback} supplied at construction time is invoked
+ * after every {@link #load()} attempt: {@link LoadCallback#reloaded} on success,
+ * {@link LoadCallback#error} on failure.
  *
  * <p>Operational state is tracked in a {@link LoadStatus} instance;
  * obtain it via {@link #getStatus()}.
@@ -34,7 +34,7 @@ public class FileLoader implements Closeable {
     private static final Logger log = LoggerFactory.getLogger(FileLoader.class);
 
     private final FileSource source;
-    private final Runnable onChanged; // nullable
+    private final LoadCallback callback; // nullable
 
     /** Ordered cache: filename → current content. Preserved across calls. */
     private LinkedHashMap<String, String> fileContents = new LinkedHashMap<>();
@@ -48,21 +48,20 @@ public class FileLoader implements Closeable {
     // Construction
     // -------------------------------------------------------------------------
 
-    /** Creates a loader without a change callback. */
+    /** Creates a loader without a callback. */
     public FileLoader(FileSource source) {
-        this(source, null);
+        this(source, (LoadCallback) null);
     }
 
     /**
-     * Creates a loader with an optional change callback.
+     * Creates a loader with an optional callback.
      *
-     * @param source     the source to load Python files from
-     * @param onChanged  called by {@link #load()} whenever a content change is
-     *                   detected; {@code null} to disable
+     * @param source    the source to load Python files from
+     * @param callback  invoked after every {@link #load()} attempt; {@code null} to disable
      */
-    public FileLoader(FileSource source, Runnable onChanged) {
+    public FileLoader(FileSource source, LoadCallback callback) {
         this.source = source;
-        this.onChanged = onChanged;
+        this.callback = callback;
         source.setChangeListener(this::doReloadOnChange);
     }
 
@@ -81,14 +80,14 @@ public class FileLoader implements Closeable {
      * </ul>
      * Files no longer listed in {@code index.txt} are evicted from the cache.
      *
-     * <p>{@link LoadStatus} is updated on every call regardless of
-     * whether a change occurred.
+     * <p>{@link LoadStatus} is updated on every call regardless of outcome.
+     * This method never throws; I/O errors are captured in the returned
+     * {@link LoadResult} and forwarded to the {@link LoadCallback} (if set).
      *
-     * @return {@code true} if any file was added, removed, or had updated content
-     * @throws IOException if the source raises an I/O error (status is updated
-     *                     with error info before the exception propagates)
+     * @return a {@link LoadResult} describing the outcome; success is
+     *         {@code true} when no I/O error occurred
      */
-    public synchronized boolean load() throws IOException {
+    public synchronized LoadResult load() {
         Instant checkedAt = Instant.now();
         try {
             LinkedHashMap<String, Optional<Instant>> fileList = source.listFiles();
@@ -151,12 +150,14 @@ public class FileLoader implements Closeable {
             if (changed) {
                 status.lastChangedAt = checkedAt;
                 log.debug("load() complete: change(s) detected");
-                if (onChanged != null) onChanged.run();
             } else {
                 log.debug("load() complete: no changes");
             }
 
-            return changed;
+            Map<String, String> snap = Collections.unmodifiableMap(new LinkedHashMap<>(fileContents));
+            LoadResult result = new LoadResult(true, status, snap, null);
+            if (callback != null) callback.reloaded(snap, status);
+            return result;
 
         } catch (IOException e) {
             Instant now = Instant.now();
@@ -164,7 +165,9 @@ public class FileLoader implements Closeable {
             status.lastError = e;
             if (status.firstErrorAt == null) status.firstErrorAt = now;
             log.error("load() failed", e);
-            throw e;
+            LoadResult result = new LoadResult(false, status, null, e);
+            if (callback != null) callback.error(status, e);
+            return result;
         }
     }
 
@@ -189,11 +192,7 @@ public class FileLoader implements Closeable {
     // -------------------------------------------------------------------------
 
     private void doReloadOnChange() {
-        try {
-            load();
-        } catch (IOException e) {
-            log.error("Auto-reload triggered by source change listener failed", e);
-        }
+        load();
     }
 
     @Override

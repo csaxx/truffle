@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -202,8 +203,11 @@ class FileLoaderTest {
         SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
         try (FileLoader loader = new FileLoader(src)) {
             loader.load();
+            Instant firstChangedAt = loader.getStatus().getLastChangedAt();
             src.switchTo("python_hr_v2");
-            assertTrue(loader.load());
+            LoadResult result = loader.load();
+            assertTrue(result.success());
+            assertTrue(loader.getStatus().getLastChangedAt().isAfter(firstChangedAt));
         }
     }
 
@@ -212,7 +216,10 @@ class FileLoaderTest {
         SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
         try (FileLoader loader = new FileLoader(src)) {
             loader.load();
-            assertFalse(loader.load());
+            Instant firstChangedAt = loader.getStatus().getLastChangedAt();
+            LoadResult result = loader.load();
+            assertTrue(result.success());
+            assertEquals(firstChangedAt, loader.getStatus().getLastChangedAt());
         }
     }
 
@@ -266,7 +273,9 @@ class FileLoaderTest {
     @Test
     void status_errorTracking_setOnListFilesFailure() throws Exception {
         try (FileLoader loader = new FileLoader(new FailingSource())) {
-            assertThrows(IOException.class, loader::load);
+            LoadResult result = loader.load();
+            assertFalse(result.success());
+            assertNotNull(result.error());
             LoadStatus status = loader.getStatus();
             assertNotNull(status.getLastErrorAt());
             assertNotNull(status.getLastError());
@@ -282,7 +291,11 @@ class FileLoaderTest {
     void onChanged_callback_firedWhenFilesChange() throws Exception {
         AtomicInteger count = new AtomicInteger();
         SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
-        try (FileLoader loader = new FileLoader(src, count::incrementAndGet)) {
+        LoadCallback callback = new LoadCallback() {
+            @Override public void reloaded(Map<String, String> fc, LoadStatus s) { count.incrementAndGet(); }
+            @Override public void error(LoadStatus s, Exception e) {}
+        };
+        try (FileLoader loader = new FileLoader(src, callback)) {
             loader.load();
             assertEquals(1, count.get());
             src.switchTo("python_hr_v2");
@@ -292,14 +305,18 @@ class FileLoaderTest {
     }
 
     @Test
-    void onChanged_callback_notFiredWhenUnchanged() throws Exception {
+    void callback_reloaded_firedOnEverySuccess() throws Exception {
         AtomicInteger count = new AtomicInteger();
         SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
-        try (FileLoader loader = new FileLoader(src, count::incrementAndGet)) {
+        LoadCallback callback = new LoadCallback() {
+            @Override public void reloaded(Map<String, String> fc, LoadStatus s) { count.incrementAndGet(); }
+            @Override public void error(LoadStatus s, Exception e) {}
+        };
+        try (FileLoader loader = new FileLoader(src, callback)) {
             loader.load();
             assertEquals(1, count.get());
-            loader.load(); // no changes
-            assertEquals(1, count.get());
+            loader.load(); // no changes — reloaded() still fires
+            assertEquals(2, count.get());
         }
     }
 
