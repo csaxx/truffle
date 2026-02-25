@@ -1,6 +1,7 @@
-package org.csa.truffle.graal.reload;
+package org.csa.truffle.scheduler;
 
 import java.time.Instant;
+import java.util.Optional;
 
 /**
  * Holds the observable status state for a {@link ScheduledReloader}.
@@ -10,13 +11,13 @@ import java.time.Instant;
  */
 public class DatasetStatus {
 
-    volatile Instant lastCheckedAt;            // null until first check
-    volatile Instant lastChangedAt;            // null until first change
-    volatile Instant lastErrorAt;              // null if no error yet
-    volatile Throwable lastError;              // null if no error yet
-    volatile ReloadResult lastResult;          // null until first reload
-    volatile Instant firstErrorAt;             // start of current error streak; cleared on success
-    volatile RuntimeException fatalError;      // non-null once grace period is exceeded
+    volatile Instant lastCheckedAt;                      // null until first check
+    volatile Instant lastChangedAt;                      // null until first change
+    volatile Instant lastErrorAt;                        // null if no error yet
+    volatile Throwable lastError;                        // null if no error yet
+    volatile Optional<Instant> lastDataAge;              // null until first changed reload
+    volatile Instant firstErrorAt;                       // start of current error streak; cleared on success
+    volatile RuntimeException fatalError;                // non-null once grace period is exceeded
 
     public Instant getLastCheckedAt() {
         return lastCheckedAt;
@@ -34,8 +35,8 @@ public class DatasetStatus {
         return lastError;
     }
 
-    public ReloadResult getLastResult() {
-        return lastResult;
+    public Optional<Instant> getLastDataAge() {
+        return lastDataAge;
     }
 
     /** Start of the current error streak, or {@code null} if no errors or last reload succeeded. */

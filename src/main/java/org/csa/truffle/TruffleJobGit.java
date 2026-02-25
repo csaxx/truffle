@@ -1,9 +1,9 @@
 package org.csa.truffle;
 
 import org.csa.truffle.function.ProcessFunctionPython;
-import org.csa.truffle.graal.reload.SchedulerConfig;
-import org.csa.truffle.graal.source.git.GitSourceConfig;
-import org.csa.truffle.graal.source.git.GitPythonSource;
+import org.csa.truffle.scheduler.SchedulerConfig;
+import org.csa.truffle.loader.source.git.GitSourceConfig;
+import org.csa.truffle.loader.source.git.GitSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,7 +15,7 @@ import java.util.List;
  * Git-backed variant of {@link TruffleJob}.
  * <p>
  * Loads Python transform scripts directly from GitHub at runtime via
- * {@link GitPythonSource}, runs them through a Flink pipeline, and writes
+ * {@link GitSource}, runs them through a Flink pipeline, and writes
  * the result to {@code output/v3/sales_transformed.csv}.
  */
 public class TruffleJobGit {

@@ -3,18 +3,18 @@ package org.csa.truffle.function;
 import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.Collector;
-import org.csa.truffle.graal.reload.DatasetConfig;
-import org.csa.truffle.graal.reload.ScheduledReloader;
-import org.csa.truffle.graal.reload.SchedulerConfig;
-import org.csa.truffle.graal.source.PythonSourceConfig;
-import org.csa.truffle.graal.source.resource.ResourceSourceConfig;
+import org.csa.truffle.graal.GraalPyContext;
+import org.csa.truffle.graal.GraalPyInterpreter;
+import org.csa.truffle.scheduler.ScheduledReloader;
+import org.csa.truffle.scheduler.SchedulerConfig;
+import org.csa.truffle.loader.source.FileSourceConfig;
+import org.csa.truffle.loader.source.resource.ResourceSourceConfig;
 import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -31,44 +31,40 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
 
     private static final Logger log = LoggerFactory.getLogger(ProcessFunctionPython.class);
 
-    private final List<DatasetConfig> datasetConfigs;
-    private final String activeDatasetId;
+    private final String id;
+    private final FileSourceConfig sourceConfig;
+    private final SchedulerConfig schedulerConfig;
 
-    private transient ScheduledReloader reloader;
-    private transient volatile List<Map.Entry<String, Value>> pyProcessElements;
+    private transient ScheduledReloader scheduler;
+
+    private transient GraalPyInterpreter interpreter;
+    private transient GraalPyInterpreter interpreterNew;
+    private transient volatile Map<GraalPyContext, Value> pyProcessElements;
 
     // -------------------------------------------------------------------------
     // Constructors
     // -------------------------------------------------------------------------
 
-    /** Full multi-dataset constructor. */
-    public ProcessFunctionPython(List<DatasetConfig> datasetConfigs, String activeDatasetId) {
-        this.datasetConfigs  = List.copyOf(datasetConfigs);
-        this.activeDatasetId = activeDatasetId;
-    }
-
-    /** Single-dataset convenience constructor. */
-    public ProcessFunctionPython(DatasetConfig config) {
-        this(List.of(config), config.id());
+    /** Primary constructor. */
+    public ProcessFunctionPython(String id, FileSourceConfig sourceConfig, SchedulerConfig schedulerConfig) {
+        this.id              = id;
+        this.sourceConfig    = sourceConfig;
+        this.schedulerConfig = schedulerConfig;
     }
 
     /** Backward-compat: uses classpath {@code python/} directory, 5-minute reload interval. */
     public ProcessFunctionPython() {
-        this(new DatasetConfig("default",
-                new ResourceSourceConfig("python"),
-                new SchedulerConfig(Duration.ofMinutes(5))));
+        this("default", new ResourceSourceConfig("python"), new SchedulerConfig(Duration.ofMinutes(5)));
     }
 
     /** Backward-compat: uses classpath {@code python/} directory with a custom interval. */
     public ProcessFunctionPython(Duration interval) {
-        this(new DatasetConfig("default",
-                new ResourceSourceConfig("python"),
-                new SchedulerConfig(interval)));
+        this("default", new ResourceSourceConfig("python"), new SchedulerConfig(interval));
     }
 
     /** Backward-compat: explicit scheduler + source config, wrapped in a default dataset. */
-    public ProcessFunctionPython(SchedulerConfig schedulerConfig, PythonSourceConfig sourceConfig) {
-        this(new DatasetConfig("default", sourceConfig, schedulerConfig));
+    public ProcessFunctionPython(SchedulerConfig schedulerConfig, FileSourceConfig sourceConfig) {
+        this("default", sourceConfig, schedulerConfig);
     }
 
     // -------------------------------------------------------------------------
@@ -78,23 +74,23 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
     @Override
     public void open(OpenContext openContext) throws Exception {
         log.info("Opening: loading Python scripts");
-        reloader = new ScheduledReloader();
-        for (DatasetConfig cfg : datasetConfigs) {
-            reloader.register(cfg.id(), cfg.sourceConfig(), cfg.schedulerConfig(),
-                (datasetId, datasetStatus, interpreter) -> {
-                    if (datasetId.equals(activeDatasetId)) {
-                        pyProcessElements = interpreter.getNamedMembers("process_element");
-                    }
-                });
-        }
-        reloader.start();   // fires callback synchronously → pyProcessElements is set
+        scheduler = new ScheduledReloader();
+        scheduler.register(id, sourceConfig, schedulerConfig,
+            (datasetId, datasetStatus, interp) -> {
+                this.interpreter = interp;
+                pyProcessElements = interp.getNamedMembers("process_element");
+            });
+        scheduler.start();   // fires callback synchronously → pyProcessElements is set
         log.debug("Loaded {} process_element function(s)", pyProcessElements.size());
     }
 
     @Override
     public void close() throws Exception {
         log.debug("Closing interpreter");
-        if (reloader != null) reloader.close();   // also closes owned interpreters
+
+        // also closes owned interpreters
+        if (scheduler != null) {
+            scheduler.close();}
     }
 
     // -------------------------------------------------------------------------
@@ -103,8 +99,14 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
 
     @Override
     public void processElement(String line, Context ctx, Collector<String> out) {
-        reloader.checkForFatalErrorById(activeDatasetId);
-        for (Map.Entry<String, Value> entry : pyProcessElements) {
+        scheduler.checkForFatalErrorById(id);
+        if (interpreterNew != null){
+            interpreter.close();
+            interpreter = interpreterNew;
+            interpreterNew = null;
+            pyProcessElements = interpreter.getNamedMembers("process_element");
+        }
+        for (Map.Entry<GraalPyContext, Value> entry : pyProcessElements.entrySet()) {
             try {
                 entry.getValue().execute(line, out);
             } catch (PolyglotException e) {

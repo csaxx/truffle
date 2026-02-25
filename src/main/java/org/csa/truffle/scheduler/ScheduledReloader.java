@@ -1,19 +1,17 @@
-package org.csa.truffle.graal.reload;
+package org.csa.truffle.scheduler;
 
 import org.csa.truffle.graal.GraalPyInterpreter;
-import org.csa.truffle.graal.source.PythonSource;
-import org.csa.truffle.graal.source.PythonSourceConfig;
-import org.csa.truffle.graal.source.PythonSourceFactory;
+import org.csa.truffle.loader.source.FileSource;
+import org.csa.truffle.loader.source.FileSourceConfig;
+import org.csa.truffle.loader.source.FileSourceFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.Serializable;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -35,6 +33,21 @@ public class ScheduledReloader implements AutoCloseable {
     private static final String DEFAULT_ID = "default";
 
     /**
+     * Identifies one named dataset: its source, and the schedule controlling how often it reloads.
+     *
+     * <p>{@code id} goes here rather than into {@link SchedulerConfig} — scheduling behaviour
+     * (interval/grace period) is separate from dataset identity, and the same
+     * {@code SchedulerConfig} can be reused across multiple datasets.
+     */
+    record DatasetRegistration(
+            String id,
+            FileSourceConfig sourceConfig,   // null when directSource is set
+            FileSource directSource,          // null when sourceConfig is set
+            SchedulerConfig schedulerConfig,
+            DatasetReloadCallback callback
+    ) implements Serializable {}
+
+    /**
      * Called by {@link ScheduledReloader} whenever a dataset is reloaded and its
      * content has changed (including the initial load on {@code start()}).
      */
@@ -43,20 +56,20 @@ public class ScheduledReloader implements AutoCloseable {
         void onReload(String datasetId, DatasetStatus status, GraalPyInterpreter interpreter);
     }
 
-    private record RegistrationEntry(DatasetConfig config, DatasetReloadCallback callback) {}
-
     /** Runtime state for one named dataset. */
-    private record DatasetEntry(
-            DatasetConfig datasetConfig,
+    private record DatasetState(
+            String id,
+            FileSourceConfig sourceConfig,
+            SchedulerConfig schedulerConfig,
             GraalPyInterpreter interpreter,
             DatasetStatus status,
             DatasetReloadCallback callback
     ) {}
 
-    private final Map<String, RegistrationEntry> registrations = new LinkedHashMap<>();
+    private final List<DatasetRegistration> registrations = new ArrayList<>();
 
-    // Runtime state, populated by start().
-    private final Map<String, DatasetEntry> datasets = new LinkedHashMap<>();
+    // Runtime states, populated by start().
+    private final Map<String, DatasetState> datasets = new LinkedHashMap<>();
 
     private final ScheduledExecutorService executor =
             Executors.newSingleThreadScheduledExecutor(r -> {
@@ -74,11 +87,21 @@ public class ScheduledReloader implements AutoCloseable {
      * Must be called before {@link #start()}.
      */
     public void register(String id,
-                         PythonSourceConfig sourceConfig,
+                         FileSourceConfig sourceConfig,
                          SchedulerConfig schedulerConfig,
                          DatasetReloadCallback callback) {
-        registrations.put(id, new RegistrationEntry(
-                new DatasetConfig(id, sourceConfig, schedulerConfig), callback));
+        registrations.add(new DatasetRegistration(id, sourceConfig, null, schedulerConfig, callback));
+    }
+
+    /**
+     * Registers a dataset backed by a pre-built {@link FileSource} instance.
+     * Use this when the source is not serializable (e.g. a test helper).
+     */
+    public void register(String id,
+                         FileSource source,
+                         SchedulerConfig schedulerConfig,
+                         DatasetReloadCallback callback) {
+        registrations.add(new DatasetRegistration(id, null, source, schedulerConfig, callback));
     }
 
     // -------------------------------------------------------------------------
@@ -91,43 +114,52 @@ public class ScheduledReloader implements AutoCloseable {
      * then schedules periodic background reloads at the configured interval.
      */
     public void start() throws IOException {
-        for (RegistrationEntry reg : registrations.values()) {
-            PythonSource source = PythonSourceFactory.create(reg.config().sourceConfig());
-            GraalPyInterpreter interp = new GraalPyInterpreter(source);
-            activateDataset(reg.config(), interp, reg.callback());
+
+        for (DatasetRegistration registration : registrations) {
+            FileSource source = registration.directSource() != null
+                    ? registration.directSource()
+                    : FileSourceFactory.create(registration.sourceConfig());
+            GraalPyInterpreter interpreter = new GraalPyInterpreter(source);
+            activateDataset(registration, interpreter);
         }
+
         log.info("ScheduledReloader started: {} dataset(s)", datasets.size());
     }
 
-    private void activateDataset(DatasetConfig config, GraalPyInterpreter interp,
-                                 DatasetReloadCallback callback) throws IOException {
+    private void activateDataset(DatasetRegistration registration, GraalPyInterpreter interpreter) throws IOException {
+
         DatasetStatus status = new DatasetStatus();
-        DatasetEntry entry = new DatasetEntry(config, interp, status, callback);
-        datasets.put(config.id(), entry);
+        DatasetState entry = new DatasetState(registration.id(), registration.sourceConfig(),
+                registration.schedulerConfig(), interpreter, status, registration.callback);
+        datasets.put(registration.id(), entry);
 
         doReload(entry);   // synchronous initial reload — always fires callback
 
-        long ms = config.schedulerConfig().interval().toMillis();
-        executor.scheduleAtFixedRate(() -> doReloadQuietly(entry), ms, ms, TimeUnit.MILLISECONDS);
+        long interval = registration.schedulerConfig().interval().toMillis();
+        executor.scheduleAtFixedRate(() -> doReloadQuietly(entry), interval, interval, TimeUnit.MILLISECONDS);
     }
 
     // -------------------------------------------------------------------------
     // Reload helpers
     // -------------------------------------------------------------------------
 
-    private void doReload(DatasetEntry entry) throws IOException {
-        ReloadResult result = entry.interpreter().reload();
+    private void doReload(DatasetState entry) throws IOException {
+
+        Instant reloadedAt = Instant.now();
+        boolean changed = entry.interpreter().reload();
         DatasetStatus status = entry.status();
-        status.lastResult    = result;
-        status.lastCheckedAt = result.reloadedAt();
-        if (result.changed()) {
-            status.lastChangedAt = result.reloadedAt();
-            entry.callback().onReload(entry.datasetConfig().id(), status, entry.interpreter());
+        status.lastCheckedAt = reloadedAt;
+
+        if (changed) {
+            status.lastChangedAt = reloadedAt;
+            status.lastDataAge   = entry.interpreter().getDataAge();
+            entry.callback().onReload(entry.id(), status, entry.interpreter());
         }
+
         status.firstErrorAt = null;   // recovery: reset streak
     }
 
-    private void doReloadQuietly(DatasetEntry entry) {
+    private void doReloadQuietly(DatasetState entry) {
         try {
             doReload(entry);
         } catch (IOException e) {
@@ -138,9 +170,12 @@ public class ScheduledReloader implements AutoCloseable {
             if (s.firstErrorAt == null) s.firstErrorAt = now;   // start of streak
             log.error("Scheduled reload failed", e);
 
-            Duration grace = entry.datasetConfig().schedulerConfig().gracePeriod();
+            Duration grace = entry.schedulerConfig().gracePeriod();
+
             if (grace != null && grace.compareTo(Duration.ZERO) > 0) {
+
                 Duration streakDuration = Duration.between(s.firstErrorAt, now);
+
                 if (s.fatalError == null && streakDuration.compareTo(grace) >= 0) {
                     String msg = String.format(
                             "Python script reload grace period exceeded: errors for %ds " +

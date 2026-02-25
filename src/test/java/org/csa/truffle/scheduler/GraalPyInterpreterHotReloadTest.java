@@ -1,9 +1,9 @@
-package org.csa.truffle.reload;
+package org.csa.truffle.scheduler;
 
 import org.apache.flink.util.Collector;
-import org.csa.truffle.SwitchablePythonSource;
+import org.csa.truffle.SwitchableFileSource;
 import org.csa.truffle.graal.GraalPyInterpreter;
-import org.csa.truffle.graal.source.resource.ResourcePythonSource;
+import org.csa.truffle.loader.source.resource.ResourceSource;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -38,7 +38,7 @@ class GraalPyInterpreterHotReloadTest {
 
     @Test
     void case1_fileOnlyInV1_presentBeforeReload() throws Exception {
-        try (GraalPyInterpreter interp = new GraalPyInterpreter(new ResourcePythonSource("python_hr_v1"))) {
+        try (GraalPyInterpreter interp = new GraalPyInterpreter(new ResourceSource("python_hr_v1"))) {
             interp.reload();
             assertTrue(interp.getLoadedFileNames().contains("file_only_in_v1.py"));
         }
@@ -46,7 +46,7 @@ class GraalPyInterpreterHotReloadTest {
 
     @Test
     void case1_fileOnlyInV1_absentAfterReload() throws Exception {
-        SwitchablePythonSource src = new SwitchablePythonSource("python_hr_v1");
+        SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
         try (GraalPyInterpreter interp = new GraalPyInterpreter(src)) {
             interp.reload();
             src.switchTo("python_hr_v2");
@@ -57,7 +57,7 @@ class GraalPyInterpreterHotReloadTest {
 
     @Test
     void case1_fileOnlyInV1_outputPresentBeforeReload() throws Exception {
-        try (GraalPyInterpreter interp = new GraalPyInterpreter(new ResourcePythonSource("python_hr_v1"))) {
+        try (GraalPyInterpreter interp = new GraalPyInterpreter(new ResourceSource("python_hr_v1"))) {
             interp.reload();
             assertTrue(invokeAll(interp, "x").contains("v1_only:x"));
         }
@@ -65,7 +65,7 @@ class GraalPyInterpreterHotReloadTest {
 
     @Test
     void case1_fileOnlyInV1_outputAbsentAfterReload() throws Exception {
-        SwitchablePythonSource src = new SwitchablePythonSource("python_hr_v1");
+        SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
         try (GraalPyInterpreter interp = new GraalPyInterpreter(src)) {
             interp.reload();
             src.switchTo("python_hr_v2");
@@ -80,7 +80,7 @@ class GraalPyInterpreterHotReloadTest {
 
     @Test
     void case2_fileOnlyInV2_absentBeforeReload() throws Exception {
-        try (GraalPyInterpreter interp = new GraalPyInterpreter(new ResourcePythonSource("python_hr_v1"))) {
+        try (GraalPyInterpreter interp = new GraalPyInterpreter(new ResourceSource("python_hr_v1"))) {
             interp.reload();
             assertFalse(interp.getLoadedFileNames().contains("file_only_in_v2.py"));
         }
@@ -88,7 +88,7 @@ class GraalPyInterpreterHotReloadTest {
 
     @Test
     void case2_fileOnlyInV2_presentAfterReload() throws Exception {
-        SwitchablePythonSource src = new SwitchablePythonSource("python_hr_v1");
+        SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
         try (GraalPyInterpreter interp = new GraalPyInterpreter(src)) {
             interp.reload();
             src.switchTo("python_hr_v2");
@@ -99,7 +99,7 @@ class GraalPyInterpreterHotReloadTest {
 
     @Test
     void case2_fileOnlyInV2_outputAbsentBeforeReload() throws Exception {
-        try (GraalPyInterpreter interp = new GraalPyInterpreter(new ResourcePythonSource("python_hr_v1"))) {
+        try (GraalPyInterpreter interp = new GraalPyInterpreter(new ResourceSource("python_hr_v1"))) {
             interp.reload();
             assertFalse(invokeAll(interp, "x").contains("v2_only:x"));
         }
@@ -107,7 +107,7 @@ class GraalPyInterpreterHotReloadTest {
 
     @Test
     void case2_fileOnlyInV2_outputPresentAfterReload() throws Exception {
-        SwitchablePythonSource src = new SwitchablePythonSource("python_hr_v1");
+        SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
         try (GraalPyInterpreter interp = new GraalPyInterpreter(src)) {
             interp.reload();
             src.switchTo("python_hr_v2");
@@ -122,7 +122,7 @@ class GraalPyInterpreterHotReloadTest {
 
     @Test
     void case3_unchangedFile_presentInBoth() throws Exception {
-        SwitchablePythonSource src = new SwitchablePythonSource("python_hr_v1");
+        SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
         try (GraalPyInterpreter interp = new GraalPyInterpreter(src)) {
             interp.reload();
             assertTrue(interp.getLoadedFileNames().contains("file_in_both_unchanged.py"));
@@ -134,7 +134,7 @@ class GraalPyInterpreterHotReloadTest {
 
     @Test
     void case3_unchangedFile_sameOutputInBoth() throws Exception {
-        SwitchablePythonSource src = new SwitchablePythonSource("python_hr_v1");
+        SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
         try (GraalPyInterpreter interp = new GraalPyInterpreter(src)) {
             interp.reload();
             assertTrue(invokeAll(interp, "x").contains("unchanged:x"));
@@ -150,7 +150,7 @@ class GraalPyInterpreterHotReloadTest {
 
     @Test
     void case4_changedFile_presentInBoth() throws Exception {
-        SwitchablePythonSource src = new SwitchablePythonSource("python_hr_v1");
+        SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
         try (GraalPyInterpreter interp = new GraalPyInterpreter(src)) {
             interp.reload();
             assertTrue(interp.getLoadedFileNames().contains("file_in_both_changed.py"));
@@ -162,7 +162,7 @@ class GraalPyInterpreterHotReloadTest {
 
     @Test
     void case4_changedFile_differentOutputAfterReload() throws Exception {
-        SwitchablePythonSource src = new SwitchablePythonSource("python_hr_v1");
+        SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
         try (GraalPyInterpreter interp = new GraalPyInterpreter(src)) {
             interp.reload();
             assertTrue(invokeAll(interp, "x").contains("changed_v1:x"));
@@ -181,20 +181,20 @@ class GraalPyInterpreterHotReloadTest {
 
     @Test
     void reloadReturnsTrueWhenFilesChange() throws Exception {
-        SwitchablePythonSource src = new SwitchablePythonSource("python_hr_v1");
+        SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
         try (GraalPyInterpreter interp = new GraalPyInterpreter(src)) {
             interp.reload();
             src.switchTo("python_hr_v2");
-            assertTrue(interp.reload().changed());
+            assertTrue(interp.reload());
         }
     }
 
     @Test
     void reloadReturnsFalseWhenUnchanged() throws Exception {
-        SwitchablePythonSource src = new SwitchablePythonSource("python_hr_v1");
+        SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
         try (GraalPyInterpreter interp = new GraalPyInterpreter(src)) {
             interp.reload();
-            assertFalse(interp.reload().changed());
+            assertFalse(interp.reload());
         }
     }
 }

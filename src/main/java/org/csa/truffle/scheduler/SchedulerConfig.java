@@ -1,4 +1,4 @@
-package org.csa.truffle.graal.reload;
+package org.csa.truffle.scheduler;
 
 import java.io.Serializable;
 import java.time.Duration;

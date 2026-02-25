@@ -4,6 +4,7 @@ import org.csa.truffle.loader.source.FileSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.*;
@@ -28,7 +29,7 @@ import java.util.*;
  * <p>All mutating operations are {@code synchronized}; the status fields are
  * {@code volatile} and safe to read from any thread without locking.
  */
-public class FileLoader {
+public class FileLoader implements Closeable {
 
     private static final Logger log = LoggerFactory.getLogger(FileLoader.class);
 
@@ -62,6 +63,7 @@ public class FileLoader {
     public FileLoader(FileSource source, Runnable onChanged) {
         this.source = source;
         this.onChanged = onChanged;
+        source.setChangeListener(this::doReloadOnChange);
     }
 
     // -------------------------------------------------------------------------
@@ -180,5 +182,22 @@ public class FileLoader {
      */
     public LoadStatus getStatus() {
         return status;
+    }
+
+    // -------------------------------------------------------------------------
+    // Push-notification and resource lifecycle
+    // -------------------------------------------------------------------------
+
+    private void doReloadOnChange() {
+        try {
+            load();
+        } catch (IOException e) {
+            log.error("Auto-reload triggered by source change listener failed", e);
+        }
+    }
+
+    @Override
+    public void close() throws IOException {
+        source.close();
     }
 }

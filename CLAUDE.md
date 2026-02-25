@@ -174,7 +174,7 @@ and has two default methods: `setChangeListener(Runnable onChanged)` (no-op) and
 callback that invokes `reload()`. Sources that can detect changes (`FilePythonSource`)
 override `setChangeListener` to start a watcher; pull-only sources (`ResourcePythonSource`,
 `GitPythonSource`, `S3PythonSource`) inherit the no-op default and remain unchanged.
-`GraalPyInterpreter.close()` also calls `source.close()` to stop any watcher thread.
+`GraalPyInterpreter.close()` also calls `source.close()` to stop any watcher thread. `FileLoader` follows the same protocol — see `### FileLoader` below.
 
 **Generation counter.** `GraalPyInterpreter` exposes `getGeneration()` — a `volatile long`
 incremented on every successful reload that detected changes. `ProcessFunctionPython`
@@ -215,6 +215,43 @@ Callers use `result.changed()` to decide whether to re-fetch `Value` references.
 its filename to `python/index.txt`. No Java changes are required. The function receives
 the raw CSV line as a string and the Flink `Collector<String>`; call `out.collect(...)`
 to emit output rows.
+
+### FileLoader
+
+**`FileLoader`** (`src/main/java/org/csa/truffle/loader/FileLoader.java`) is a `Closeable`
+content cache that reads `.py` files from a `FileSource` and tracks changes via per-file
+modification timestamps.
+
+**`load()`** (re)reads the file list from `source.listFiles()`. On the first call every file is
+read; on subsequent calls a file is re-read only when its mtime has advanced (or the source cannot
+provide a timestamp). Files removed from `index.txt` are evicted from the cache. Returns `true`
+if any file was added, removed, or had updated content. Fires the `onChanged` callback (if set)
+and updates `LoadStatus` on every call regardless of whether a change occurred.
+
+**`getFileContents()`** returns a defensive `LinkedHashMap<String, String>` snapshot in index order.
+
+**`getStatus()`** returns the `LoadStatus` instance. `LoadStatus` fields are all `volatile`:
+- `lastCheckedAt` — set on every `load()` call; `null` until the first call.
+- `lastChangedAt` — set only when `load()` detects a change.
+- `loadedFiles` — `Set<String>` snapshot of currently cached filenames.
+- `lastErrorAt` / `lastError` / `firstErrorAt` — error streak tracking (same semantics as `ScheduledReloader`).
+
+**Push-notification.** `FileLoader` calls `source.setChangeListener(this::doReloadOnChange)` in
+its constructor, following the same protocol as `GraalPyInterpreter`. When a push-capable source
+fires the listener, `doReloadOnChange` calls `load()` automatically; any `IOException` is caught
+and logged (not propagated, since there is no caller to return to). Pull-only sources inherit the
+no-op default and are unaffected.
+
+**`close()`** delegates to `source.close()`. Always use try-with-resources.
+
+**Constructors:** `FileLoader(FileSource source)` and `FileLoader(FileSource source, Runnable onChanged)`.
+
+**`FileLoaderTest`** (`src/test/java/org/csa/truffle/loader/FileLoaderTest.java`) covers the same
+case matrix as `GraalPyInterpreterHotReloadTest` (Cases 1–4: removed / added / unchanged / changed
+files; `load()` return value) plus `LoadStatus` field tracking, `onChanged` callback firing, and
+push-notification integration via `NotifyingSource` — an inner test helper that captures the
+registered listener and exposes `triggerChange()` to fire it synchronously without a real watcher.
+Uses `SwitchableFileSource` and the existing `python_hr_v1` / `python_hr_v2` test resources.
 
 ### Scheduled reload
 
