@@ -7,7 +7,6 @@ import org.graalvm.polyglot.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.util.*;
 
 /**
@@ -36,7 +35,7 @@ public class GraalPyInterpreter implements AutoCloseable {
      * Iteration order of the map determines index order; pass a
      * {@link java.util.LinkedHashMap} for deterministic ordering.
      *
-     * @param fileContents  filename → Python source code
+     * @param fileContents filename → Python source code
      */
     public GraalPyInterpreter(Map<String, String> fileContents) throws Exception {
         log.debug("Initializing with {} file(s)", fileContents.size());
@@ -105,7 +104,14 @@ public class GraalPyInterpreter implements AutoCloseable {
 
     @Override
     public void close() {
+
         log.debug("Closing interpreter: {} file context(s)", fileContexts.size());
-        fileContexts.values().forEach(fc -> fc.context().close());
+
+        fileContexts.values().forEach(fc -> {
+            try {
+                fc.context().close();
+            } catch (Exception ignored) {
+            }
+        });
     }
 }

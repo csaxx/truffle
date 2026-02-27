@@ -9,6 +9,7 @@ import java.util.Map;
  */
 public record LoadResult(
         boolean success,
+        boolean changed,
         LoadStatus status,
         Map<String, String> fileContents,   // non-null on success
         Exception error                      // non-null on failure

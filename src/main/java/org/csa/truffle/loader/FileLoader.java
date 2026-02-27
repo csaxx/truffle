@@ -36,10 +36,14 @@ public class FileLoader implements Closeable {
     private final FileSource source;
     private final LoadCallback callback; // nullable
 
-    /** Ordered cache: filename → current content. Preserved across calls. */
+    /**
+     * Ordered cache: filename → current content. Preserved across calls.
+     */
     private LinkedHashMap<String, String> fileContents = new LinkedHashMap<>();
 
-    /** Per-file last-known mtime. Absent when a file was loaded without a timestamp. */
+    /**
+     * Per-file last-known mtime. Absent when a file was loaded without a timestamp.
+     */
     private final Map<String, Instant> lastModTimes = new HashMap<>();
 
     private final LoadStatus status = new LoadStatus();
@@ -48,7 +52,9 @@ public class FileLoader implements Closeable {
     // Construction
     // -------------------------------------------------------------------------
 
-    /** Creates a loader without a callback. */
+    /**
+     * Creates a loader without a callback.
+     */
     public FileLoader(FileSource source) {
         this(source, (LoadCallback) null);
     }
@@ -56,8 +62,8 @@ public class FileLoader implements Closeable {
     /**
      * Creates a loader with an optional callback.
      *
-     * @param source    the source to load Python files from
-     * @param callback  invoked after every {@link #load()} attempt; {@code null} to disable
+     * @param source   the source to load Python files from
+     * @param callback invoked after every {@link #load()} attempt; {@code null} to disable
      */
     public FileLoader(FileSource source, LoadCallback callback) {
         this.source = source;
@@ -85,16 +91,19 @@ public class FileLoader implements Closeable {
      * {@link LoadResult} and forwarded to the {@link LoadCallback} (if set).
      *
      * @return a {@link LoadResult} describing the outcome; success is
-     *         {@code true} when no I/O error occurred
+     * {@code true} when no I/O error occurred
      */
     public synchronized LoadResult load() {
+
         Instant checkedAt = Instant.now();
+        status.lastCheckedAt = checkedAt;
+
         try {
             LinkedHashMap<String, Optional<Instant>> fileList = source.listFiles();
             log.debug("load() started; source lists {} file(s)", fileList.size());
 
             boolean changed = false;
-            LinkedHashMap<String, String> newContents = new LinkedHashMap<>();
+            LinkedHashMap<String, String> newFileContents = new LinkedHashMap<>();
             Map<String, Instant> newModTimes = new HashMap<>();
 
             for (Map.Entry<String, Optional<Instant>> entry : fileList.entrySet()) {
@@ -113,7 +122,7 @@ public class FileLoader implements Closeable {
                 String content;
                 if (needsRead) {
                     content = source.readFile(name);
-                    String previous = fileContents.get(name);
+                    String previous = fileContents.get(name); // TODO: use hash, do not store full filecontents
                     if (!content.equals(previous)) {
                         log.info(previous == null ? "New file loaded: {}" : "File content updated: {}", name);
                         changed = true;
@@ -122,18 +131,18 @@ public class FileLoader implements Closeable {
                     content = fileContents.get(name); // reuse from cache
                     log.debug("Skipped unchanged file (modTime): {}", name);
                 }
-                newContents.put(name, content);
+                newFileContents.put(name, content);
             }
 
             // Detect removed files
             for (String name : fileContents.keySet()) {
-                if (!newContents.containsKey(name)) {
+                if (!newFileContents.containsKey(name)) {
                     log.info("File removed from index: {}", name);
                     changed = true;
                 }
             }
 
-            fileContents = newContents;
+            fileContents = newFileContents;
             lastModTimes.clear();
             lastModTimes.putAll(newModTimes);
 
@@ -142,11 +151,7 @@ public class FileLoader implements Closeable {
                     .map(Optional::get)
                     .max(Comparator.naturalOrder());
 
-            status.lastCheckedAt = checkedAt;
-            status.lastDataAge = maxDataAge;
-            status.loadedFiles = Set.copyOf(newContents.keySet());
-            status.firstErrorAt = null; // clear error streak on success
-
+            // update status
             if (changed) {
                 status.lastChangedAt = checkedAt;
                 log.debug("load() complete: change(s) detected");
@@ -154,19 +159,34 @@ public class FileLoader implements Closeable {
                 log.debug("load() complete: no changes");
             }
 
-            Map<String, String> snap = Collections.unmodifiableMap(new LinkedHashMap<>(fileContents));
-            LoadResult result = new LoadResult(true, status, snap, null);
-            if (callback != null) callback.reloaded(snap, status);
+            status.lastSuccessAt = checkedAt;
+            status.lastDataAge = maxDataAge;
+            status.loadedFiles = Set.copyOf(newFileContents.keySet());
+
+            // build result and notify via callback
+            Map<String, String> fileContentsCopy = Collections.unmodifiableMap(new LinkedHashMap<>(fileContents));
+            LoadResult result = new LoadResult(true, changed, status, fileContentsCopy, null); // TODO: create dedicated constructors
+
+            if (callback != null) {
+                callback.reloaded(fileContentsCopy, status);
+            }
+
             return result;
 
         } catch (IOException e) {
-            Instant now = Instant.now();
-            status.lastErrorAt = now;
-            status.lastError = e;
-            if (status.firstErrorAt == null) status.firstErrorAt = now;
+
             log.error("load() failed", e);
-            LoadResult result = new LoadResult(false, status, null, e);
-            if (callback != null) callback.error(status, e);
+
+            // update status
+            status.lastErrorAt = checkedAt;
+            status.lastError = e;
+
+            // build result and notify via callback
+            LoadResult result = new LoadResult(false, false, status, null, e);
+            if (callback != null) {
+                callback.error(status, e);
+            }
+
             return result;
         }
     }

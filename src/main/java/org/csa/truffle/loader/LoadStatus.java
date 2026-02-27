@@ -13,32 +13,62 @@ import java.util.Set;
  */
 public class LoadStatus {
 
-    /** Wall-clock time of the most recent {@code load()} call; {@code null} until the first call. */
-    volatile Instant lastCheckedAt;
+    /**
+     * Wall-clock time of the most recent {@code load()} call; {@code null} until the first call.
+     */
+    Instant lastCheckedAt;
 
-    /** Wall-clock time of the most recent load that detected a change; {@code null} until then. */
-    volatile Instant lastChangedAt;
+    /**
+     * Wall-clock time of the most recent load that detected a change; {@code null} until then.
+     */
+    Instant lastChangedAt;
 
-    /** Max modification time across all files from the most recent {@code load()}; empty when none reported. */
-    volatile Optional<Instant> lastDataAge = Optional.empty();
+    /**
+     * Wall-clock time of the most recent successful attempt to load the new files; {@code null} until then.
+     */
+    Instant lastSuccessAt;
 
-    /** Wall-clock time of the most recent {@code load()} that threw an {@link java.io.IOException}; {@code null} if none. */
-    volatile Instant lastErrorAt;
+    /**
+     * Max modification time across all files from the most recent {@code load()}; empty when none reported.
+     */
+    Optional<Instant> lastDataAge = Optional.empty();
 
-    /** The most recent {@link java.io.IOException} thrown by {@code load()}; {@code null} if none. */
-    volatile Throwable lastError;
+    /**
+     * Wall-clock time of the most recent {@code load()} that threw an {@link java.io.IOException}; {@code null} if none.
+     */
+    Instant lastErrorAt;
 
-    /** Start of the current uninterrupted error streak; cleared ({@code null}) when a load succeeds. */
-    volatile Instant firstErrorAt;
+    /**
+     * The most recent {@link java.io.IOException} thrown by {@code load()}; {@code null} if none.
+     */
+    Throwable lastError;
 
-    /** Ordered snapshot of filenames currently held in the loader's cache; empty until first successful load. */
-    volatile Set<String> loadedFiles = Set.of();
+    /**
+     * Ordered snapshot of filenames currently held in the loader's cache; empty until first successful load.
+     */
+    Set<String> loadedFiles = Set.of();
 
-    public Instant getLastCheckedAt()          { return lastCheckedAt; }
-    public Instant getLastChangedAt()          { return lastChangedAt; }
-    public Optional<Instant> getLastDataAge()  { return lastDataAge; }
-    public Instant getLastErrorAt()            { return lastErrorAt; }
-    public Throwable getLastError()            { return lastError; }
-    public Instant getFirstErrorAt()           { return firstErrorAt; }
-    public Set<String> getLoadedFiles()        { return loadedFiles; }
+    public Instant getLastCheckedAt() {
+        return lastCheckedAt;
+    }
+
+    public Instant getLastChangedAt() {
+        return lastChangedAt;
+    }
+
+    public Optional<Instant> getLastDataAge() {
+        return lastDataAge;
+    }
+
+    public Instant getLastErrorAt() {
+        return lastErrorAt;
+    }
+
+    public Throwable getLastError() {
+        return lastError;
+    }
+
+    public Set<String> getLoadedFiles() {
+        return loadedFiles;
+    }
 }
