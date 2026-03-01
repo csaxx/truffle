@@ -117,7 +117,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
         for (String file : interpreter.getLoadedFileNames()) {
             try {
                 interpreter.execute(file, "process_element", line, out);
-            } catch (PolyglotException e) {
+            } catch (Exception e) {
                 Exception wrapped = new Exception(
                         "Python error in '" + file + "' processing line: " + line, e);
                 log.error("Python execution failed in file '{}': {}", file, e.getMessage(), wrapped);

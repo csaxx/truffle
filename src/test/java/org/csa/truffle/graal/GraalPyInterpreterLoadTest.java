@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import static org.junit.jupiter.api.Assertions.*;
 
 class GraalPyInterpreterLoadTest {
@@ -44,16 +45,16 @@ class GraalPyInterpreterLoadTest {
     }
 
     @Test
-    void getMember_missingMember_returnsNull() throws Exception {
+    void getMember_missingMember_throwsNoSuchElementException() throws Exception {
         try (GraalPyInterpreter interp = new GraalPyInterpreter(Map.of("a.py", "x = 1"))) {
-            assertNull(interp.getMember("a.py", "nonexistent"));
+            assertThrows(NoSuchElementException.class, () -> interp.getMember("a.py", "nonexistent"));
         }
     }
 
     @Test
-    void getMember_unknownFile_returnsNull() throws Exception {
+    void getMember_unknownFile_throwsNoSuchElementException() throws Exception {
         try (GraalPyInterpreter interp = new GraalPyInterpreter(Map.of("a.py", "x = 1"))) {
-            assertNull(interp.getMember("no_such.py", "x"));
+            assertThrows(NoSuchElementException.class, () -> interp.getMember("no_such.py", "x"));
         }
     }
 

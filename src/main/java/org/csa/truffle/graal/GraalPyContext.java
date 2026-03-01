@@ -5,6 +5,7 @@ import org.graalvm.polyglot.Value;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
 public class GraalPyContext {
 
@@ -26,18 +27,17 @@ public class GraalPyContext {
     }
 
     /**
-     * Returns the cached {@link Value} for {@code memberName}, or {@code null}
-     * if the Python module does not define that name.
-     * The result is cached on first access.
+     * Returns the cached {@link Value} for {@code memberName}.
+     *
+     * @throws NoSuchElementException if the Python module does not define that name
      */
     public Value getMember(String memberName) {
-        Value member = memberCache.get(memberName);
-
-        if (member == null) {
-            member = context.getBindings("python").getMember(memberName);
-            memberCache.put(memberName, member);
-        }
-
+        Value cached = memberCache.get(memberName);
+        if (cached != null) return cached;
+        Value member = context.getBindings("python").getMember(memberName);
+        if (member == null) throw new NoSuchElementException(
+                "Python member '" + memberName + "' not defined in '" + name + "'");
+        memberCache.put(memberName, member);
         return member;
     }
 }

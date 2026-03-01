@@ -64,12 +64,15 @@ public class GraalPyInterpreter implements AutoCloseable {
     }
 
     /**
-     * Returns the cached {@link Value} for {@code memberName} in the named file,
-     * or {@code null} if the file is not loaded or does not define that member.
+     * Returns the cached {@link Value} for {@code memberName} in the named file.
+     *
+     * @throws NoSuchElementException if the file is not loaded or does not define the member
      */
     public Value getMember(String filename, String memberName) {
         GraalPyContext ctx = fileContexts.get(filename);
-        return ctx == null ? null : ctx.getMember(memberName);
+        if (ctx == null) throw new NoSuchElementException(
+                "Python file '" + filename + "' is not loaded");
+        return ctx.getMember(memberName);
     }
 
     /**
@@ -77,10 +80,12 @@ public class GraalPyInterpreter implements AutoCloseable {
      * in index order. Files that do not define the member are omitted.
      */
     public List<Value> getMembers(String memberName) {
-        return fileContexts.values().stream()
-                .map(fc -> fc.getMember(memberName))
-                .filter(Objects::nonNull)
-                .toList();
+        List<Value> result = new ArrayList<>();
+        for (GraalPyContext fc : fileContexts.values()) {
+            try { result.add(fc.getMember(memberName)); }
+            catch (NoSuchElementException ignored) {}
+        }
+        return List.copyOf(result);
     }
 
     /**
@@ -88,18 +93,18 @@ public class GraalPyInterpreter implements AutoCloseable {
      * No-op if the file is not loaded or does not define the member.
      */
     public void execute(String filename, String memberName, Object... args) {
-        Value member = getMember(filename, memberName);
-        if (member != null) member.execute(args);
+        try { getMember(filename, memberName).execute(args); }
+        catch (NoSuchElementException ignored) {}
     }
 
     /**
      * Executes {@code memberName} on every loaded file that defines it, in index order.
      */
     public void executeAll(String memberName, Object... args) {
-        fileContexts.values().stream()
-                .map(fc -> fc.getMember(memberName))
-                .filter(Objects::nonNull)
-                .forEach(member -> member.execute(args));
+        for (GraalPyContext fc : fileContexts.values()) {
+            try { fc.getMember(memberName).execute(args); }
+            catch (NoSuchElementException ignored) {}
+        }
     }
 
     @Override
