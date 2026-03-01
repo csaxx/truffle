@@ -1,11 +1,11 @@
 package org.csa.truffle;
 
-import org.csa.truffle.loader.source.FileSource;
-import org.csa.truffle.loader.source.resource.ResourceSource;
+import org.csa.truffle.source.FileSource;
+import org.csa.truffle.source.resource.ResourceSource;
 
 import java.io.IOException;
 import java.time.Instant;
-import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -19,6 +19,6 @@ public class SwitchableFileSource implements FileSource {
 
     public void switchTo(String dir) { current = new ResourceSource(dir); }
 
-    @Override public LinkedHashMap<String, Optional<Instant>> listFiles() throws IOException { return current.listFiles(); }
+    @Override public Map<String, Optional<Instant>> listFiles() throws IOException { return current.listFiles(); }
     @Override public String readFile(String name) throws IOException { return current.readFile(name); }
 }

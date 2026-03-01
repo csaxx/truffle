@@ -1,4 +1,4 @@
-package org.csa.truffle.loader.source.git;
+package org.csa.truffle.source.git;
 
 /**
  * Identifies the Git forge type so {@link GitSource} can build

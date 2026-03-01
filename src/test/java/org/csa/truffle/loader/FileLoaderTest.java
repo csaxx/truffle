@@ -1,12 +1,11 @@
 package org.csa.truffle.loader;
 
 import org.csa.truffle.SwitchableFileSource;
-import org.csa.truffle.loader.source.FileSource;
+import org.csa.truffle.source.FileSource;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -19,12 +18,15 @@ class FileLoaderTest {
     // Inner helper classes
     // -------------------------------------------------------------------------
 
-    /** A source whose {@code listFiles()} always throws {@link IOException}. */
+    /**
+     * A source whose {@code listFiles()} always throws {@link IOException}.
+     */
     static class FailingSource implements FileSource {
         @Override
-        public LinkedHashMap<String, Optional<Instant>> listFiles() throws IOException {
+        public Map<String, Optional<Instant>> listFiles() throws IOException {
             throw new IOException("intentional failure");
         }
+
         @Override
         public String readFile(String name) throws IOException {
             throw new IOException("intentional failure");
@@ -39,14 +41,32 @@ class FileLoaderTest {
         private final SwitchableFileSource delegate;
         private Runnable listener;
 
-        NotifyingSource(String initialDir) { delegate = new SwitchableFileSource(initialDir); }
+        NotifyingSource(String initialDir) {
+            delegate = new SwitchableFileSource(initialDir);
+        }
 
-        @Override public void setChangeListener(Runnable r) { listener = r; }
-        public void triggerChange() { if (listener != null) listener.run(); }
-        public void switchTo(String dir) { delegate.switchTo(dir); }
+        @Override
+        public void setChangeListener(Runnable r) {
+            listener = r;
+        }
 
-        @Override public LinkedHashMap<String, Optional<Instant>> listFiles() throws IOException { return delegate.listFiles(); }
-        @Override public String readFile(String name) throws IOException { return delegate.readFile(name); }
+        public void triggerChange() {
+            if (listener != null) listener.run();
+        }
+
+        public void switchTo(String dir) {
+            delegate.switchTo(dir);
+        }
+
+        @Override
+        public Map<String, Optional<Instant>> listFiles() throws IOException {
+            return delegate.listFiles();
+        }
+
+        @Override
+        public String readFile(String name) throws IOException {
+            return delegate.readFile(name);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -207,6 +227,7 @@ class FileLoaderTest {
             src.switchTo("python_hr_v2");
             LoadResult result = loader.load();
             assertTrue(result.success());
+            assertTrue(result.changes().stream().anyMatch(c -> c.status() != FileChangeInfo.ChangeStatus.UNMODIFIED));
             assertTrue(loader.getStatus().getLastChangedAt().isAfter(firstChangedAt));
         }
     }
@@ -219,6 +240,7 @@ class FileLoaderTest {
             Instant firstChangedAt = loader.getStatus().getLastChangedAt();
             LoadResult result = loader.load();
             assertTrue(result.success());
+            assertTrue(result.changes().stream().allMatch(c -> c.status() == FileChangeInfo.ChangeStatus.UNMODIFIED));
             assertEquals(firstChangedAt, loader.getStatus().getLastChangedAt());
         }
     }
@@ -276,7 +298,7 @@ class FileLoaderTest {
             LoadResult result = loader.load();
             assertFalse(result.success());
             assertNotNull(result.error());
-            LoadStatus status = loader.getStatus();
+            FileLoaderStatus status = loader.getStatus();
             assertNotNull(status.getLastErrorAt());
             assertNotNull(status.getLastError());
             assertNotNull(status.getFirstErrorAt());
@@ -291,9 +313,8 @@ class FileLoaderTest {
     void onChanged_callback_firedWhenFilesChange() throws Exception {
         AtomicInteger count = new AtomicInteger();
         SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
-        LoadCallback callback = new LoadCallback() {
-            @Override public void reloaded(Map<String, String> fc, LoadStatus s) { count.incrementAndGet(); }
-            @Override public void error(LoadStatus s, Exception e) {}
+        FileLoader.LoadCallback callback = (result) -> {
+            if (result.success()) count.incrementAndGet();
         };
         try (FileLoader loader = new FileLoader(src, callback)) {
             loader.load();
@@ -308,10 +329,11 @@ class FileLoaderTest {
     void callback_reloaded_firedOnEverySuccess() throws Exception {
         AtomicInteger count = new AtomicInteger();
         SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
-        LoadCallback callback = new LoadCallback() {
-            @Override public void reloaded(Map<String, String> fc, LoadStatus s) { count.incrementAndGet(); }
-            @Override public void error(LoadStatus s, Exception e) {}
+
+        FileLoader.LoadCallback callback = (result) -> {
+            if (result.success()) count.incrementAndGet();
         };
+
         try (FileLoader loader = new FileLoader(src, callback)) {
             loader.load();
             assertEquals(1, count.get());

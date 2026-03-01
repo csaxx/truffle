@@ -1,7 +1,7 @@
-package org.csa.truffle.loader.source.git;
+package org.csa.truffle.source.git;
 
 import org.apache.commons.lang3.StringUtils;
-import org.csa.truffle.loader.source.FileSource;
+import org.csa.truffle.source.FileSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -13,6 +13,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -98,7 +99,7 @@ public class GitSource implements FileSource {
     }
 
     @Override
-    public LinkedHashMap<String, Optional<Instant>> listFiles() throws IOException {
+    public Map<String, Optional<Instant>> listFiles() throws IOException {
         LinkedHashMap<String, Optional<Instant>> result = new LinkedHashMap<>();
         fetch(directory + "/index.txt").lines()
                 .map(String::trim)

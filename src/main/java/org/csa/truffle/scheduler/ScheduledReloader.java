@@ -1,35 +1,33 @@
 package org.csa.truffle.scheduler;
 
 import org.csa.truffle.graal.GraalPyInterpreter;
-import org.csa.truffle.loader.FileLoader;
-import org.csa.truffle.loader.LoadResult;
-import org.csa.truffle.loader.LoadStatus;
-import org.csa.truffle.loader.source.FileSource;
-import org.csa.truffle.loader.source.FileSourceConfig;
-import org.csa.truffle.loader.source.FileSourceFactory;
+import org.csa.truffle.loader.*;
+import org.csa.truffle.source.FileSource;
+import org.csa.truffle.source.FileSourceConfig;
+import org.csa.truffle.source.FileSourceFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Collections;
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
+ * Manages one or more named datasets, each backed by a {@link FileLoader}.
  * Performs an initial synchronous reload then schedules periodic background reloads
- * of one or more {@link GraalPyInterpreter} instances at configurable intervals.
+ * at the configured interval per dataset.
  *
- * <p>File loading and change detection are delegated to {@link FileLoader}.
- * A new {@link GraalPyInterpreter} is built whenever the loader detects content changes.
- * Observable status (instants, error info) is accessible via {@link #getStatus()} or
- * {@link #getStatus(String)} and backed by {@link LoadStatus}.
+ * <p>A new {@link GraalPyInterpreter} is built whenever the loader detects content changes.
+ * Observable status is accessible via {@link #getStatus()} and backed by {@link FileLoaderStatus}.
  *
- * <p>Thread-safety: interpreter and fatalError fields are {@code volatile} — writes
- * from the scheduler thread are immediately visible to any reader.
+ * <p>Thread-safety: {@code fatalError} is {@code volatile} — writes from the scheduler
+ * thread are immediately visible to any reader.
  */
 public class ScheduledReloader implements AutoCloseable {
 
@@ -41,29 +39,57 @@ public class ScheduledReloader implements AutoCloseable {
      */
     @FunctionalInterface
     public interface DatasetReloadCallback {
-        void onReload(LoadStatus status, GraalPyInterpreter interpreter);
+        void onReload(String id, FileLoaderStatus status, GraalPyInterpreter interpreter);
     }
 
+    /** Internal record for a registered dataset. */
+    private static final class DatasetEntry {
+        final String id;
+        final FileLoader loader;
+        final SchedulerConfig schedulerConfig;
+        final DatasetReloadCallback callback;
+        ScheduledExecutorService executor;
 
-    private final ScheduledExecutorService executor =
-            Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "ScheduledReloader");
-                t.setDaemon(true);
-                return t;
-            });
+        DatasetEntry(String id, FileLoader loader, SchedulerConfig schedulerConfig, DatasetReloadCallback callback) {
+            this.id = id;
+            this.loader = loader;
+            this.schedulerConfig = schedulerConfig;
+            this.callback = callback;
+        }
+    }
 
-    private final FileSourceConfig sourceConfig; // null when directSource is set
-    private final SchedulerConfig schedulerConfig;
-    private final DatasetReloadCallback callback;
+    private final List<DatasetEntry> datasets = new ArrayList<>();
 
-    private FileLoader loader;
-    volatile RuntimeException fatalError;         // set once grace period exceeded
-    volatile Instant lastBuiltChangedAt;          // lastChangedAt when interpreter was last built
+    volatile RuntimeException fatalError;
 
-    public ScheduledReloader(FileSourceConfig sourceConfig, SchedulerConfig schedulerConfig, DatasetReloadCallback callback) {
-        this.sourceConfig = sourceConfig;
-        this.schedulerConfig = schedulerConfig;
-        this.callback = callback;
+    // -------------------------------------------------------------------------
+    // Construction and registration
+    // -------------------------------------------------------------------------
+
+    public ScheduledReloader() {}
+
+    /**
+     * Registers a dataset backed by the given {@link FileSourceConfig}.
+     * Must be called before {@link #start()}.
+     */
+    public void register(String id, FileSourceConfig config, SchedulerConfig schedulerConfig,
+                         DatasetReloadCallback callback) {
+        FileSource source = FileSourceFactory.create(config);
+        registerSource(id, source, schedulerConfig, callback);
+    }
+
+    /**
+     * Registers a dataset backed by an already-constructed {@link FileSource}.
+     * Must be called before {@link #start()}.
+     */
+    public void register(String id, FileSource source, SchedulerConfig schedulerConfig,
+                         DatasetReloadCallback callback) {
+        registerSource(id, source, schedulerConfig, callback);
+    }
+
+    private void registerSource(String id, FileSource source, SchedulerConfig schedulerConfig,
+                                 DatasetReloadCallback callback) {
+        datasets.add(new DatasetEntry(id, new FileLoader(source), schedulerConfig, callback));
     }
 
     // -------------------------------------------------------------------------
@@ -73,55 +99,58 @@ public class ScheduledReloader implements AutoCloseable {
     /**
      * Performs the initial reload synchronously on the calling thread
      * (so data is ready before Flink starts calling {@code processElement}),
-     * then schedules periodic background reloads at the configured interval.
+     * then schedules periodic background reloads at the configured interval per dataset.
      */
     public void start() throws IOException {
-        FileSource source = FileSourceFactory.create(sourceConfig);
-        FileLoader loader = new FileLoader(source);
+        for (DatasetEntry entry : datasets) {
+            doReload(entry);   // synchronous initial load
 
-        doReload();   // synchronous initial load
-        long interval = schedulerConfig.interval().toMillis();
-        executor.scheduleAtFixedRate(this::doReloadQuietly, interval, interval, TimeUnit.MILLISECONDS);
+            long interval = entry.schedulerConfig.interval().toMillis();
+            ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "ScheduledReloader-" + entry.id);
+                t.setDaemon(true);
+                return t;
+            });
+            entry.executor = executor;
+            executor.scheduleAtFixedRate(() -> doReloadQuietly(entry), interval, interval, TimeUnit.MILLISECONDS);
+        }
 
-        log.info("ScheduledReloader started");
+        log.info("ScheduledReloader started ({} dataset(s))", datasets.size());
     }
 
     // -------------------------------------------------------------------------
     // Reload helpers
     // -------------------------------------------------------------------------
 
-    private void doReload() throws IOException {
-        LoadResult result = loader.load();
+    private void doReload(DatasetEntry entry) throws IOException {
+        LoadResult result = entry.loader.load();
 
         if (!result.success()) {
             throw new IOException("FileLoader failed: " + result.error().getMessage(), result.error());
         }
 
-        LoadStatus status = result.status();
-        Instant newChangedAt = status.getLastChangedAt();
-        boolean needsRebuild = (newChangedAt != null && !newChangedAt.equals(lastBuiltChangedAt));
+        boolean needsRebuild = result.changes().stream()
+                .anyMatch(c -> c.status() != FileChangeInfo.ChangeStatus.UNMODIFIED);
 
         if (needsRebuild) {
-            GraalPyInterpreter old = entry.interpreter;
+            Map<String, String> contents = entry.loader.getFileContents();
             try {
-                GraalPyInterpreter interpreter = new GraalPyInterpreter(result.fileContents());
-                lastBuiltChangedAt = newChangedAt;
-                if (old != null) old.close();
-                callback.onReload(entry.id, status, entry.interpreter);
+                GraalPyInterpreter interpreter = new GraalPyInterpreter(contents);
+                entry.callback.onReload(entry.id, result.status(), interpreter);
             } catch (Exception e) {
                 log.error("Interpreter rebuild failed for dataset '{}': {}", entry.id, e.getMessage(), e);
             }
         }
     }
 
-    private void doReloadQuietly() {
+    private void doReloadQuietly(DatasetEntry entry) {
         try {
-            doReload();
+            doReload(entry);
         } catch (IOException e) {
-            LoadStatus status = loader.getStatus();
+            FileLoaderStatus status = entry.loader.getStatus();
             log.error("Scheduled reload failed for dataset '{}'", entry.id, e);
 
-            Duration grace = schedulerConfig.gracePeriod();
+            Duration grace = entry.schedulerConfig.gracePeriod();
             if (grace != null && grace.compareTo(Duration.ZERO) > 0 && fatalError == null) {
                 Instant streakStart = status.getFirstErrorAt();
                 if (streakStart != null) {
@@ -139,16 +168,16 @@ public class ScheduledReloader implements AutoCloseable {
         }
     }
 
-
     // -------------------------------------------------------------------------
-    // Public accessors — backward-compat single-dataset
+    // Public accessors
     // -------------------------------------------------------------------------
 
     /**
-     * Returns the status of the default (single) dataset.
+     * Returns the {@link FileLoaderStatus} of the first registered dataset, or {@code null}
+     * if no datasets have been registered.
      */
-    public LoadStatus getStatus() {
-        return loader != null ? loader.getStatus() : null;
+    public FileLoaderStatus getStatus() {
+        return datasets.isEmpty() ? null : datasets.get(0).loader.getStatus();
     }
 
     public RuntimeException getFatalError() {
@@ -160,8 +189,7 @@ public class ScheduledReloader implements AutoCloseable {
     // -------------------------------------------------------------------------
 
     /**
-     * Throws the stored fatal error if the grace period has been exceeded for <em>any</em> dataset;
-     * no-op otherwise.
+     * Throws the stored fatal error if the grace period has been exceeded; no-op otherwise.
      */
     public void checkForFatalError() {
         if (fatalError != null) {
@@ -175,12 +203,14 @@ public class ScheduledReloader implements AutoCloseable {
 
     @Override
     public void close() {
-        executor.shutdownNow();
-
-        try {
-            loader.close();
-        } catch (IOException ignored) {
+        for (DatasetEntry entry : datasets) {
+            if (entry.executor != null) {
+                entry.executor.shutdownNow();
+            }
+            try {
+                entry.loader.close();
+            } catch (IOException ignored) {
+            }
         }
     }
-
 }

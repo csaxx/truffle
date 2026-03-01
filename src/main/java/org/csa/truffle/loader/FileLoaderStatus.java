@@ -1,7 +1,6 @@
 package org.csa.truffle.loader;
 
 import java.time.Instant;
-import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -11,7 +10,7 @@ import java.util.Set;
  * after every {@link FileLoader#load()} call.
  * All getters are public for external observation.
  */
-public class LoadStatus {
+public class FileLoaderStatus {
 
     /**
      * Wall-clock time of the most recent {@code load()} call; {@code null} until the first call.
@@ -29,9 +28,9 @@ public class LoadStatus {
     Instant lastSuccessAt;
 
     /**
-     * Max modification time across all files from the most recent {@code load()}; empty when none reported.
+     * Max modification time across all files from the most recent {@code load()}; {@code null} when none reported.
      */
-    Optional<Instant> lastDataAge = Optional.empty();
+    Instant lastDataAge;
 
     /**
      * Wall-clock time of the most recent {@code load()} that threw an {@link java.io.IOException}; {@code null} if none.
@@ -56,7 +55,7 @@ public class LoadStatus {
         return lastChangedAt;
     }
 
-    public Optional<Instant> getLastDataAge() {
+    public Instant getLastDataAge() {
         return lastDataAge;
     }
 
@@ -71,4 +70,5 @@ public class LoadStatus {
     public Set<String> getLoadedFiles() {
         return loadedFiles;
     }
+
 }

@@ -1,4 +1,4 @@
-package org.csa.truffle.loader.source;
+package org.csa.truffle.source;
 
 import java.io.Serializable;
 

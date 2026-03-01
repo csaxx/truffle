@@ -1,7 +1,7 @@
-package org.csa.truffle.loader.source.s3;
+package org.csa.truffle.source.s3;
 
 import org.apache.commons.lang3.StringUtils;
-import org.csa.truffle.loader.source.FileSource;
+import org.csa.truffle.source.FileSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.ResponseBytes;
@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -56,12 +57,14 @@ public class S3Source implements FileSource {
     }
 
     @Override
-    public LinkedHashMap<String, Optional<Instant>> listFiles() throws IOException {
+    public Map<String, Optional<Instant>> listFiles() throws IOException {
         List<String> names = getObject("index.txt").lines()
                 .map(String::trim)
                 .filter(l -> !l.isEmpty() && !l.startsWith("#"))
                 .toList();
-        LinkedHashMap<String, Optional<Instant>> result = new LinkedHashMap<>();
+
+        Map<String, Optional<Instant>> result = new LinkedHashMap<>();
+
         try {
             for (String name : names) {
                 String key = prefix.isEmpty() ? name : prefix + "/" + name;
@@ -71,6 +74,7 @@ public class S3Source implements FileSource {
         } catch (S3Exception e) {
             throw new IOException("S3 error fetching metadata: " + e.getMessage(), e);
         }
+
         return result;
     }
 

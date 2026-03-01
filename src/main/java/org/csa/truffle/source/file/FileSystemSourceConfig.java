@@ -1,6 +1,6 @@
-package org.csa.truffle.loader.source.file;
+package org.csa.truffle.source.file;
 
-import org.csa.truffle.loader.source.FileSourceConfig;
+import org.csa.truffle.source.FileSourceConfig;
 
 /**
  * @param directory absolute path to the local directory

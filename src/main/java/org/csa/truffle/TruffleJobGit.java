@@ -2,8 +2,8 @@ package org.csa.truffle;
 
 import org.csa.truffle.function.ProcessFunctionPython;
 import org.csa.truffle.scheduler.SchedulerConfig;
-import org.csa.truffle.loader.source.git.GitSourceConfig;
-import org.csa.truffle.loader.source.git.GitSource;
+import org.csa.truffle.source.git.GitSourceConfig;
+import org.csa.truffle.source.git.GitSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -1,6 +1,6 @@
-package org.csa.truffle.loader.source.file;
+package org.csa.truffle.source.file;
 
-import org.csa.truffle.loader.source.FileSource;
+import org.csa.truffle.source.FileSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -10,6 +10,7 @@ import java.nio.file.*;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -45,7 +46,7 @@ public class FileSystemSource implements FileSource {
     }
 
     @Override
-    public LinkedHashMap<String, Optional<Instant>> listFiles() throws IOException {
+    public Map<String, Optional<Instant>> listFiles() throws IOException {
         Path index = directory.resolve("index.txt");
         List<String> names = Files.readString(index, StandardCharsets.UTF_8).lines()
                 .map(String::trim)

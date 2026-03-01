@@ -1,11 +1,12 @@
 package org.csa.truffle.loader;
 
-import org.csa.truffle.loader.source.FileSource;
+import org.apache.commons.lang3.StringUtils;
+import org.csa.truffle.loader.FileChangeInfo.ChangeStatus;
+import org.csa.truffle.source.FileSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
-import java.io.IOException;
 import java.time.Instant;
 import java.util.*;
 
@@ -17,36 +18,44 @@ import java.util.*;
  * listed file is read. On subsequent calls a file's content is re-read only
  * when its modification time has advanced since the last load; files for which
  * the source cannot provide a timestamp are always re-read. Files that
- * disappear from {@code index.txt} are evicted from the cache.
+ * disappear are evicted from the cache.
  *
  * <p>An optional {@link LoadCallback} supplied at construction time is invoked
- * after every {@link #load()} attempt: {@link LoadCallback#reloaded} on success,
- * {@link LoadCallback#error} on failure.
+ * after every {@link #load()} attempt.
  *
- * <p>Operational state is tracked in a {@link LoadStatus} instance;
+ * <p>Operational state is tracked in a {@link FileLoaderStatus} instance;
  * obtain it via {@link #getStatus()}.
- *
- * <p>All mutating operations are {@code synchronized}; the status fields are
- * {@code volatile} and safe to read from any thread without locking.
  */
 public class FileLoader implements Closeable {
+
+    /**
+     * Callback fired by {@link FileLoader#load()} after each attempt.
+     */
+    @FunctionalInterface
+    public interface LoadCallback {
+        void notify(LoadResult result);
+    }
 
     private static final Logger log = LoggerFactory.getLogger(FileLoader.class);
 
     private final FileSource source;
-    private final LoadCallback callback; // nullable
+
+    /**
+     * Optional callback for {@link LoadResult} on {@link #load()}.
+     */
+    private final LoadCallback callback;
 
     /**
      * Ordered cache: filename → current content. Preserved across calls.
      */
-    private LinkedHashMap<String, String> fileContents = new LinkedHashMap<>();
+    private final Map<String, String> fileContents = new LinkedHashMap<>();
 
     /**
-     * Per-file last-known mtime. Absent when a file was loaded without a timestamp.
+     * Per-file last-known modification time. Absent when a file was loaded without a timestamp.
      */
-    private final Map<String, Instant> lastModTimes = new HashMap<>();
+    private final Map<String, Instant> modTimes = new HashMap<>();
 
-    private final LoadStatus status = new LoadStatus();
+    private final FileLoaderStatus status = new FileLoaderStatus();
 
     // -------------------------------------------------------------------------
     // Construction
@@ -56,19 +65,21 @@ public class FileLoader implements Closeable {
      * Creates a loader without a callback.
      */
     public FileLoader(FileSource source) {
-        this(source, (LoadCallback) null);
+        this(source, null);
     }
 
     /**
      * Creates a loader with an optional callback.
      *
-     * @param source   the source to load Python files from
+     * @param source   the source to load files from
      * @param callback invoked after every {@link #load()} attempt; {@code null} to disable
      */
     public FileLoader(FileSource source, LoadCallback callback) {
         this.source = source;
         this.callback = callback;
-        source.setChangeListener(this::doReloadOnChange);
+
+        // source may provide a callback when input changes
+        source.setChangeListener(this::load);
     }
 
     // -------------------------------------------------------------------------
@@ -86,7 +97,7 @@ public class FileLoader implements Closeable {
      * </ul>
      * Files no longer listed in {@code index.txt} are evicted from the cache.
      *
-     * <p>{@link LoadStatus} is updated on every call regardless of outcome.
+     * <p>{@link FileLoaderStatus} is updated on every call regardless of outcome.
      * This method never throws; I/O errors are captured in the returned
      * {@link LoadResult} and forwarded to the {@link LoadCallback} (if set).
      *
@@ -97,54 +108,74 @@ public class FileLoader implements Closeable {
 
         Instant checkedAt = Instant.now();
         status.lastCheckedAt = checkedAt;
+        LoadResult result;
 
         try {
-            LinkedHashMap<String, Optional<Instant>> fileList = source.listFiles();
+            Map<String, Optional<Instant>> fileList = source.listFiles();
             log.debug("load() started; source lists {} file(s)", fileList.size());
 
             boolean changed = false;
-            LinkedHashMap<String, String> newFileContents = new LinkedHashMap<>();
+
+            List<FileChangeInfo> changes = new ArrayList<>();
+            Map<String, String> newFileContents = new LinkedHashMap<>();
             Map<String, Instant> newModTimes = new HashMap<>();
 
             for (Map.Entry<String, Optional<Instant>> entry : fileList.entrySet()) {
-                String name = entry.getKey();
+                String filePath = entry.getKey();
                 Optional<Instant> modTime = entry.getValue();
 
+                // file needs to be (re)read if it is newer or has no modification time
                 boolean needsRead;
                 if (modTime.isPresent()) {
-                    Instant lastKnown = lastModTimes.get(name);
+                    Instant lastKnown = modTimes.get(filePath);
                     needsRead = lastKnown == null || modTime.get().isAfter(lastKnown);
-                    newModTimes.put(name, modTime.get());
+                    newModTimes.put(filePath, modTime.get());
                 } else {
                     needsRead = true; // no timestamp available — always re-read
                 }
 
+                // read file (if necessary) and get contents
+                ChangeStatus changeStatus;
                 String content;
                 if (needsRead) {
-                    content = source.readFile(name);
-                    String previous = fileContents.get(name); // TODO: use hash, do not store full filecontents
-                    if (!content.equals(previous)) {
-                        log.info(previous == null ? "New file loaded: {}" : "File content updated: {}", name);
+                    content = source.readFile(filePath);
+                    String previous = fileContents.get(filePath);
+                    if (previous == null) {
+                        changeStatus = ChangeStatus.ADDED;
+                        log.info("New file loaded: {}", filePath);
                         changed = true;
+                    } else if (StringUtils.equals(content, previous)) {
+                        changeStatus = ChangeStatus.MODIFIED;
+                        log.info("File content updated: {}", filePath);
+                        changed = true;
+                    } else {
+                        changeStatus = ChangeStatus.UNMODIFIED;
+                        log.debug("File re-read but unchanged: {}", filePath);
                     }
                 } else {
-                    content = fileContents.get(name); // reuse from cache
-                    log.debug("Skipped unchanged file (modTime): {}", name);
+                    content = fileContents.get(filePath); // reuse from cache
+                    changeStatus = ChangeStatus.UNMODIFIED;
+                    log.debug("Skipped unchanged file (modTime): {}", filePath);
                 }
-                newFileContents.put(name, content);
+
+                newFileContents.put(filePath, content);
+                changes.add(new FileChangeInfo(filePath, modTime, changeStatus));
             }
 
             // Detect removed files
-            for (String name : fileContents.keySet()) {
-                if (!newFileContents.containsKey(name)) {
-                    log.info("File removed from index: {}", name);
+            for (String filePath : fileContents.keySet()) {
+                if (!newFileContents.containsKey(filePath)) {
+                    log.info("File removed from index: {}", filePath);
+                    changes.add(new FileChangeInfo(filePath, Optional.empty(), ChangeStatus.REMOVED));
                     changed = true;
                 }
             }
 
-            fileContents = newFileContents;
-            lastModTimes.clear();
-            lastModTimes.putAll(newModTimes);
+            // update current file contents/mod times
+            fileContents.clear();
+            fileContents.putAll(newFileContents);
+            modTimes.clear();
+            modTimes.putAll(newModTimes);
 
             Optional<Instant> maxDataAge = fileList.values().stream()
                     .filter(Optional::isPresent)
@@ -160,20 +191,13 @@ public class FileLoader implements Closeable {
             }
 
             status.lastSuccessAt = checkedAt;
-            status.lastDataAge = maxDataAge;
+            status.lastDataAge = maxDataAge.orElse(null);
             status.loadedFiles = Set.copyOf(newFileContents.keySet());
 
-            // build result and notify via callback
-            Map<String, String> fileContentsCopy = Collections.unmodifiableMap(new LinkedHashMap<>(fileContents));
-            LoadResult result = new LoadResult(true, changed, status, fileContentsCopy, null); // TODO: create dedicated constructors
+            List<FileChangeInfo> changesCopy = List.copyOf(changes);
+            result = new LoadResult(status, changesCopy);
 
-            if (callback != null) {
-                callback.reloaded(fileContentsCopy, status);
-            }
-
-            return result;
-
-        } catch (IOException e) {
+        } catch (Exception e) {
 
             log.error("load() failed", e);
 
@@ -181,14 +205,18 @@ public class FileLoader implements Closeable {
             status.lastErrorAt = checkedAt;
             status.lastError = e;
 
-            // build result and notify via callback
-            LoadResult result = new LoadResult(false, false, status, null, e);
-            if (callback != null) {
-                callback.error(status, e);
-            }
-
-            return result;
+            result = new LoadResult(status, e);
         }
+
+        if (callback != null) {
+            try {
+                callback.notify(result);
+            } catch (Exception e) {
+                log.warn("error notifying callback", e);
+            }
+        }
+
+        return result;
     }
 
     /**
@@ -203,20 +231,16 @@ public class FileLoader implements Closeable {
      * Returns the status object for this loader.
      * Individual fields are {@code volatile} and safe to read from any thread.
      */
-    public LoadStatus getStatus() {
+    public FileLoaderStatus getStatus() {
         return status;
     }
 
-    // -------------------------------------------------------------------------
-    // Push-notification and resource lifecycle
-    // -------------------------------------------------------------------------
-
-    private void doReloadOnChange() {
-        load();
-    }
-
     @Override
-    public void close() throws IOException {
-        source.close();
+    public void close() {
+        try {
+            source.close();
+        } catch (Exception ignored) {
+        }
     }
+
 }

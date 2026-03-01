@@ -4,8 +4,8 @@ import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.Collector;
 import org.csa.truffle.graal.GraalPyInterpreter;
-import org.csa.truffle.loader.source.FileSourceConfig;
-import org.csa.truffle.loader.source.resource.ResourceSourceConfig;
+import org.csa.truffle.source.FileSourceConfig;
+import org.csa.truffle.source.resource.ResourceSourceConfig;
 import org.csa.truffle.scheduler.ScheduledReloader;
 import org.csa.truffle.scheduler.SchedulerConfig;
 import org.graalvm.polyglot.PolyglotException;
@@ -76,14 +76,15 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
 
         log.info("Opening: loading Python scripts");
 
-        scheduler = new ScheduledReloader(sourceConfig, schedulerConfig,
-                (datasetStatus, interpreter) -> {
+        scheduler = new ScheduledReloader();
+        scheduler.register("default", sourceConfig, schedulerConfig,
+                (id, datasetStatus, newInterpreter) -> {
                     if (this.interpreter != null) {
                         this.interpreter.close();
                     }
-                    this.interpreter = interpreter;
+                    this.interpreter = newInterpreter;
                 });
-        scheduler.start();   // fires callback synchronously → pyProcessElements is set
+        scheduler.start();   // fires callback synchronously → interpreter is set
 
         log.debug("Loaded {} process_element function(s)", interpreter.getLoadedFileNames().size());
     }

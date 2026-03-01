@@ -1,12 +1,12 @@
-package org.csa.truffle.loader.source;
+package org.csa.truffle.source;
 
 import org.csa.truffle.graal.GraalPyInterpreter;
-import org.csa.truffle.loader.source.file.FileSystemSource;
+import org.csa.truffle.source.file.FileSystemSource;
 
 import java.io.Closeable;
 import java.io.IOException;
 import java.time.Instant;
-import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -22,7 +22,7 @@ public interface FileSource extends Closeable {
      * The value is {@link Optional#empty()} if the source cannot determine the
      * modification time for a particular file.
      */
-    LinkedHashMap<String, Optional<Instant>> listFiles() throws IOException;
+    Map<String, Optional<Instant>> listFiles() throws IOException;
 
     /**
      * Returns the source code of the named file.

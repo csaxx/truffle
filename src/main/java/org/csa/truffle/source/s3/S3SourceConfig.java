@@ -1,6 +1,6 @@
-package org.csa.truffle.loader.source.s3;
+package org.csa.truffle.source.s3;
 
-import org.csa.truffle.loader.source.FileSourceConfig;
+import org.csa.truffle.source.FileSourceConfig;
 
 /**
  * @param bucket      S3 bucket name

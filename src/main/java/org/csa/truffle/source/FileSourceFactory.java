@@ -1,13 +1,13 @@
-package org.csa.truffle.loader.source;
+package org.csa.truffle.source;
 
-import org.csa.truffle.loader.source.file.FileSystemSource;
-import org.csa.truffle.loader.source.file.FileSystemSourceConfig;
-import org.csa.truffle.loader.source.git.GitSource;
-import org.csa.truffle.loader.source.git.GitSourceConfig;
-import org.csa.truffle.loader.source.resource.ResourceSource;
-import org.csa.truffle.loader.source.resource.ResourceSourceConfig;
-import org.csa.truffle.loader.source.s3.S3Source;
-import org.csa.truffle.loader.source.s3.S3SourceConfig;
+import org.csa.truffle.source.file.FileSystemSource;
+import org.csa.truffle.source.file.FileSystemSourceConfig;
+import org.csa.truffle.source.git.GitSource;
+import org.csa.truffle.source.git.GitSourceConfig;
+import org.csa.truffle.source.resource.ResourceSource;
+import org.csa.truffle.source.resource.ResourceSourceConfig;
+import org.csa.truffle.source.s3.S3Source;
+import org.csa.truffle.source.s3.S3SourceConfig;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;

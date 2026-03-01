@@ -1,7 +1,7 @@
 package org.csa.truffle.scheduler;
 
 import org.csa.truffle.SwitchableFileSource;
-import org.csa.truffle.loader.source.resource.ResourceSourceConfig;
+import org.csa.truffle.source.resource.ResourceSourceConfig;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;

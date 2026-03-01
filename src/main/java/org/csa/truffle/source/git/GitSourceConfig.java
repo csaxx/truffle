@@ -1,6 +1,6 @@
-package org.csa.truffle.loader.source.git;
+package org.csa.truffle.source.git;
 
-import org.csa.truffle.loader.source.FileSourceConfig;
+import org.csa.truffle.source.FileSourceConfig;
 
 /**
  * @param repoUrl   e.g. {@code https://github.com/owner/repo}

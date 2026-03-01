@@ -1,13 +1,14 @@
-package org.csa.truffle.loader.source.resource;
+package org.csa.truffle.source.resource;
 
 import org.apache.commons.io.IOUtils;
-import org.csa.truffle.loader.source.FileSource;
+import org.csa.truffle.source.FileSource;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -24,7 +25,7 @@ public class ResourceSource implements FileSource {
     }
 
     @Override
-    public LinkedHashMap<String, Optional<Instant>> listFiles() throws IOException {
+    public Map<String, Optional<Instant>> listFiles() throws IOException {
         LinkedHashMap<String, Optional<Instant>> result = new LinkedHashMap<>();
         readResource(directory + "/index.txt").lines()
                 .map(String::trim)
