@@ -24,13 +24,16 @@ public final class FileSourceFactory {
 
     public static FileSource create(FileSourceConfig config) {
         return switch (config) {
-            case ResourceSourceConfig c -> new ResourceSource(c.directory());
+            case ResourceSourceConfig c ->
+                    new ResourceSource(c.directory(), c.filemask());
 
             case GitSourceConfig c -> c.forge() != null
-                    ? new GitSource(c.repoUrl(), c.directory(), c.branch(), c.token(), c.forge())
-                    : new GitSource(c.repoUrl(), c.directory(), c.branch(), c.token());
+                    ? new GitSource(c.repoUrl(), c.directory(), c.branch(), c.token(), c.forge(), c.filemask())
+                    : new GitSource(c.repoUrl(), c.directory(), c.branch(), c.token(),
+                            GitSource.detectForge(c.repoUrl()), c.filemask());
 
-            case FileSystemSourceConfig c -> new FileSystemSource(Path.of(c.directory()), c.watch());
+            case FileSystemSourceConfig c ->
+                    new FileSystemSource(Path.of(c.directory()), c.watch(), c.filemask());
 
             case S3SourceConfig c -> {
                 S3ClientBuilder b = S3Client.builder();
@@ -41,9 +44,10 @@ public final class FileSourceFactory {
                 if (c.accessKeyId() != null && c.secretKey() != null)
                     b.credentialsProvider(StaticCredentialsProvider.create(
                             AwsBasicCredentials.create(c.accessKeyId(), c.secretKey())));
-                yield new S3Source(b.build(), c.bucket(), c.prefix());
+                yield new S3Source(b.build(), c.bucket(), c.prefix(), c.filemask());
             }
-            default -> throw new IllegalArgumentException("Unknown SourceConfig type: " + config.getClass().getName());
+            default -> throw new IllegalArgumentException(
+                    "Unknown SourceConfig type: " + config.getClass().getName());
         };
     }
 }

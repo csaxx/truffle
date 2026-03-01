@@ -1,3 +1,0 @@
-file_only_in_v1.py
-file_in_both_unchanged.py
-file_in_both_changed.py

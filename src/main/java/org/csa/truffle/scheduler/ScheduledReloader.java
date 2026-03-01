@@ -56,7 +56,9 @@ public class ScheduledReloader implements AutoCloseable {
 
     public ScheduledReloader(FileSourceConfig sourceConfig, SchedulerConfig schedulerConfig,
                              ScheduledReloadCallback callback) {
-        this(FileSourceFactory.create(sourceConfig), schedulerConfig, callback);
+        this(FileSourceFactory.create(
+                sourceConfig.filemask() == null ? sourceConfig.withFilemask("*.py") : sourceConfig
+        ), schedulerConfig, callback);
     }
 
     public ScheduledReloader(FileSource source, SchedulerConfig schedulerConfig,
@@ -184,6 +186,10 @@ public class ScheduledReloader implements AutoCloseable {
         if (executor != null) {
             executor.shutdownNow();
         }
-        loader.close();
+
+        try {
+            loader.close();
+        } catch (Exception ignored) {
+        }
     }
 }

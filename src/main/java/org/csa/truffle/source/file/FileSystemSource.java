@@ -8,26 +8,20 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Stream;
 
 /**
- * {@link FileSource} that reads  files from a local directory and
- * watches it for changes via {@link WatchService}.
+ * {@link FileSource} that auto-discovers files by walking a local directory and
+ * watches it recursively for changes via {@link WatchService}.
  *
- * <p>Construct with the directory path; {@link #setChangeListener(Runnable)} is
- * called automatically by {@link org.csa.truffle.graal.GraalPyInterpreter} and
- * starts a daemon watcher thread.
- *
- * <pre>
- *   try (var src = new FileSource(Path.of("/opt/scripts/"));
- *        var interp = new GraalPyInterpreter(src)) {
- *       interp.reload();
- *       // watcher now fires automatic reloads on file changes
- *   }
- * </pre>
+ * <p>Files under any {@code venv/} subtree are excluded. The {@code filemask}
+ * glob is matched against the filename (last path component); pass {@code null}
+ * to include all files.
  */
 public class FileSystemSource implements FileSource {
 
@@ -35,32 +29,44 @@ public class FileSystemSource implements FileSource {
     private static final long DEBOUNCE_MS = 100;
 
     private final Path directory;
-    private volatile Runnable changeListener;
     private final boolean watch;
+    private final String filemask;
+    private volatile Runnable changeListener;
     private WatchService watchService;
     private Thread watcherThread;
+    private final Map<WatchKey, Path> watchedDirs = new ConcurrentHashMap<>();
 
-    public FileSystemSource(Path directory, boolean watch) {
+    public FileSystemSource(Path directory, boolean watch, String filemask) {
         this.directory = directory;
         this.watch = watch;
+        this.filemask = filemask;
+    }
+
+    public FileSystemSource(Path directory, boolean watch) {
+        this(directory, watch, null);
     }
 
     @Override
     public Map<String, Optional<Instant>> listFiles() throws IOException {
-        Path index = directory.resolve("index.txt");
-        List<String> names = Files.readString(index, StandardCharsets.UTF_8).lines()
-                .map(String::trim)
-                .filter(l -> !l.isEmpty() && !l.startsWith("#"))
-                .toList();
+        PathMatcher matcher = buildMatcher(filemask);
         LinkedHashMap<String, Optional<Instant>> result = new LinkedHashMap<>();
-        for (String name : names) {
-            Instant mtime;
-            try {
-                mtime = Files.getLastModifiedTime(directory.resolve(name)).toInstant();
-            } catch (IOException e) {
-                mtime = null;
-            }
-            result.put(name, Optional.ofNullable(mtime));
+        try (Stream<Path> walk = Files.walk(directory)) {
+            walk
+                    .filter(Files::isRegularFile)
+                    .filter(p -> !isVenvPath(directory.relativize(p)))
+                    .filter(p -> matchesMask(directory.relativize(p).toString().replace('\\', '/'), matcher))
+                    .sorted(Comparator.comparing(
+                            p -> directory.relativize(p).toString().replace('\\', '/')))
+                    .forEach(file -> {
+                        String rel = directory.relativize(file).toString().replace('\\', '/');
+                        Instant mtime;
+                        try {
+                            mtime = Files.getLastModifiedTime(file).toInstant();
+                        } catch (IOException e) {
+                            mtime = null;
+                        }
+                        result.put(rel, Optional.ofNullable(mtime));
+                    });
         }
         return result;
     }
@@ -70,9 +76,6 @@ public class FileSystemSource implements FileSource {
         return Files.readString(directory.resolve(name), StandardCharsets.UTF_8);
     }
 
-    /**
-     * Called once by GraalPyInterpreter. Starts the watcher thread.
-     */
     @Override
     public synchronized void setChangeListener(Runnable onChanged) {
         if (!watch || watcherThread != null) return; // idempotent
@@ -80,10 +83,7 @@ public class FileSystemSource implements FileSource {
         log.info("Starting file watcher on: {}", directory);
         try {
             watchService = FileSystems.getDefault().newWatchService();
-            directory.register(watchService,
-                    StandardWatchEventKinds.ENTRY_CREATE,
-                    StandardWatchEventKinds.ENTRY_MODIFY,
-                    StandardWatchEventKinds.ENTRY_DELETE);
+            registerTree(directory);
         } catch (IOException e) {
             log.error("Could not start file watcher: {}", e.getMessage());
             return;
@@ -94,7 +94,32 @@ public class FileSystemSource implements FileSource {
         log.debug("Watcher thread started: {}", watcherThread.getName());
     }
 
+    private void registerTree(Path dir) throws IOException {
+        WatchKey key = dir.register(watchService,
+                StandardWatchEventKinds.ENTRY_CREATE,
+                StandardWatchEventKinds.ENTRY_MODIFY,
+                StandardWatchEventKinds.ENTRY_DELETE);
+        watchedDirs.put(key, dir);
+        // Register all existing subdirectories recursively
+        try (Stream<Path> walk = Files.walk(dir)) {
+            walk.filter(Files::isDirectory)
+                    .filter(p -> !p.equals(dir))
+                    .forEach(subdir -> {
+                        try {
+                            WatchKey k = subdir.register(watchService,
+                                    StandardWatchEventKinds.ENTRY_CREATE,
+                                    StandardWatchEventKinds.ENTRY_MODIFY,
+                                    StandardWatchEventKinds.ENTRY_DELETE);
+                            watchedDirs.put(k, subdir);
+                        } catch (IOException e) {
+                            log.warn("Could not register subdirectory for watching: {}", subdir);
+                        }
+                    });
+        }
+    }
+
     private void watchLoop() {
+        PathMatcher matcher = buildMatcher(filemask);
         while (!Thread.currentThread().isInterrupted()) {
             WatchKey key;
             try {
@@ -106,14 +131,34 @@ public class FileSystemSource implements FileSource {
                 return;
             }
 
+            Path watchedDir = watchedDirs.get(key);
             boolean relevant = false;
+
             for (WatchEvent<?> event : key.pollEvents()) {
                 Object ctx = event.context();
-                if (ctx instanceof Path p) {
-                    String name = p.getFileName().toString();
-                    if (name.endsWith(".py") || name.equals("index.txt")) {
-                        relevant = true;
+                if (!(ctx instanceof Path p)) continue;
+
+                Path fullPath = watchedDir != null ? watchedDir.resolve(p) : p;
+
+                if (event.kind() == StandardWatchEventKinds.ENTRY_CREATE
+                        && Files.isDirectory(fullPath)) {
+                    // New subdirectory: register it for watching
+                    try {
+                        WatchKey k = fullPath.register(watchService,
+                                StandardWatchEventKinds.ENTRY_CREATE,
+                                StandardWatchEventKinds.ENTRY_MODIFY,
+                                StandardWatchEventKinds.ENTRY_DELETE);
+                        watchedDirs.put(k, fullPath);
+                    } catch (IOException e) {
+                        log.warn("Could not register new directory: {}", fullPath);
                     }
+                    relevant = true;
+                    continue;
+                }
+
+                String name = p.getFileName().toString();
+                if (matchesMask(name, matcher)) {
+                    relevant = true;
                 }
             }
             key.reset();
@@ -137,5 +182,27 @@ public class FileSystemSource implements FileSource {
         log.debug("Closing file watcher for: {}", directory);
         if (watcherThread != null) watcherThread.interrupt();
         if (watchService != null) watchService.close();
+    }
+
+    // -------------------------------------------------------------------------
+    // Shared helpers (duplicated from ResourceSource for package isolation)
+    // -------------------------------------------------------------------------
+
+    static boolean isVenvPath(Path relativePath) {
+        for (Path component : relativePath) {
+            if ("venv".equals(component.toString())) return true;
+        }
+        return false;
+    }
+
+    static PathMatcher buildMatcher(String filemask) {
+        if (filemask == null) return null;
+        return FileSystems.getDefault().getPathMatcher("glob:" + filemask);
+    }
+
+    static boolean matchesMask(String name, PathMatcher matcher) {
+        if (matcher == null) return true;
+        Path filename = Path.of(name).getFileName();
+        return filename != null && matcher.matches(filename);
     }
 }

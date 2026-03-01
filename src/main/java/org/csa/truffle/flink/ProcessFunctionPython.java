@@ -4,10 +4,10 @@ import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.Collector;
 import org.csa.truffle.graal.GraalPyInterpreter;
-import org.csa.truffle.source.FileSourceConfig;
-import org.csa.truffle.source.resource.ResourceSourceConfig;
 import org.csa.truffle.scheduler.ScheduledReloader;
 import org.csa.truffle.scheduler.SchedulerConfig;
+import org.csa.truffle.source.FileSourceConfig;
+import org.csa.truffle.source.resource.ResourceSourceConfig;
 import org.graalvm.polyglot.PolyglotException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -78,12 +78,15 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
 
         scheduler = new ScheduledReloader(sourceConfig, schedulerConfig,
                 (datasetStatus, newInterpreter) -> {
-                    if (this.interpreter != null) {
-                        this.interpreter.close();
-                    }
+                    GraalPyInterpreter oldInterpreter = this.interpreter;
                     this.interpreter = newInterpreter;
+                    if (oldInterpreter != null) {
+                        oldInterpreter.close();
+                    }
                 });
-        scheduler.start();   // fires callback synchronously → interpreter is set
+
+        // fires callback synchronously → interpreter is set
+        scheduler.start();
 
         log.debug("Loaded {} process_element function(s)", interpreter.getLoadedFileNames().size());
     }

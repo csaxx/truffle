@@ -2,6 +2,7 @@ package org.csa.truffle.graal;
 
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
+
 import java.util.HashMap;
 import java.util.Map;
 
@@ -16,8 +17,13 @@ public class GraalPyContext {
         this.name = name;
     }
 
-    public Context context() { return context; }
-    public String name()    { return name; }
+    public Context context() {
+        return context;
+    }
+
+    public String name() {
+        return name;
+    }
 
     /**
      * Returns the cached {@link Value} for {@code memberName}, or {@code null}
@@ -25,7 +31,13 @@ public class GraalPyContext {
      * The result is cached on first access.
      */
     public Value getMember(String memberName) {
-        return memberCache.computeIfAbsent(memberName,
-                k -> context.getBindings("python").getMember(k));
+        Value member = memberCache.get(memberName);
+
+        if (member == null) {
+            member = context.getBindings("python").getMember(memberName);
+            memberCache.put(memberName, member);
+        }
+
+        return member;
     }
 }

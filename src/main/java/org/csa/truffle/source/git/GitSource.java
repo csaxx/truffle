@@ -1,5 +1,7 @@
 package org.csa.truffle.source.git;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.lang3.StringUtils;
 import org.csa.truffle.source.FileSource;
 import org.slf4j.Logger;
@@ -7,38 +9,46 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
+import java.nio.file.Path;
+import java.nio.file.PathMatcher;
 import java.time.Instant;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 /**
- * {@link FileSource} that fetches  files from a Git repository
- * without cloning. Supports GitHub (github.com), GitLab (gitlab.com or
- * self-hosted), and Gitea / Forgejo (self-hosted). Files are fetched one
- * at a time via raw-content HTTP URLs; only {@code index.txt} and the
- * files it lists are downloaded.
+ * {@link FileSource} that auto-discovers files in a Git repository via the
+ * forge's tree API — no clone required. Supports GitHub, GitLab, and Gitea /
+ * Forgejo. File contents are fetched one at a time via raw-content HTTP URLs.
+ *
+ * <p>Files under any {@code venv/} subtree are excluded. The {@code filemask}
+ * glob is matched against the filename; pass {@code null} to include all files.
+ * Discovered paths are sorted alphabetically.
  *
  * <p><b>GitHub example:</b>
  * <pre>
- *   new GitSource("https://github.com/owner/repo", "", "main", "ghp_...");
+ *   new GitSource("https://github.com/owner/repo", "python", "main", "ghp_...");
  * </pre>
  *
  * <p><b>GitLab example:</b>
  * <pre>
- *   new GitSource("https://gitlab.com/group/repo", "", "main", "glpat-...");
+ *   new GitSource("https://gitlab.com/group/repo", "python", "main", "glpat-...");
  * </pre>
  *
  * <p><b>Gitea / Forgejo example:</b>
  * <pre>
- *   new GitSource("https://gitea.example.com/user/repo", "", "main", token, ForgeType.GITEA);
+ *   new GitSource("https://gitea.example.com/user/repo", "python", "main", token, GitForgeType.GITEA);
  * </pre>
  *
  * <p>Pass {@code null} as the token for public repositories.
+ *
+ * <p><b>GitLab pagination note:</b> {@code listFiles()} fetches at most 100
+ * items per page (one request). Repositories with more than 100 files under
+ * the configured directory may not return all files.
  */
 public class GitSource implements FileSource {
 
@@ -46,31 +56,53 @@ public class GitSource implements FileSource {
 
     private final HttpClient http;
     private final String rawBaseUrl;   // {provider-raw-prefix}/{branch}
+    private final String apiBaseUrl;   // forge-specific REST API root
     private final String directory;
+    private final String branch;
+    private final GitForgeType gitForgeType;
     private final String token;        // nullable
+    private final String filemask;     // nullable
 
     /**
      * Creates a {@code GitSource} with an explicit forge type.
-     * Use this constructor when the host cannot be auto-detected (e.g. Gitea
-     * or Forgejo instances, or GitLab instances that do not match the
-     * auto-detection heuristic).
      */
     public GitSource(String repoUrl, String directory, String branch,
-                     String token, GitForgeType gitForgeType) {
+                     String token, GitForgeType gitForgeType, String filemask) {
+        this(repoUrl, directory, branch, token, gitForgeType, filemask,
+                buildApiBase(repoUrl, branch, gitForgeType));
+    }
+
+    /**
+     * Constructor that accepts a pre-built {@code apiBaseUrl}.
+     * Used in tests to redirect API calls to a mock server.
+     */
+    public GitSource(String repoUrl, String directory, String branch,
+                     String token, GitForgeType gitForgeType, String filemask,
+                     String apiBaseUrl) {
         this.directory = directory;
         this.token = token;
+        this.filemask = filemask;
+        this.branch = branch;
+        this.gitForgeType = gitForgeType;
         this.rawBaseUrl = buildRawBase(repoUrl, branch, gitForgeType);
+        this.apiBaseUrl = apiBaseUrl;
         this.http = HttpClient.newHttpClient();
-        log.info("Initialized: rawBaseUrl={}, directory={}, auth={}, forge={}",
-                rawBaseUrl, directory,
+        log.info("Initialized: rawBaseUrl={}, apiBaseUrl={}, directory={}, auth={}, forge={}",
+                rawBaseUrl, apiBaseUrl, directory,
                 StringUtils.isNotBlank(token) ? "token" : "none", gitForgeType);
     }
 
     /**
+     * Creates a {@code GitSource} with an explicit forge type (no filemask).
+     */
+    public GitSource(String repoUrl, String directory, String branch,
+                     String token, GitForgeType gitForgeType) {
+        this(repoUrl, directory, branch, token, gitForgeType, null);
+    }
+
+    /**
      * Creates a {@code GitSource} with auto-detected forge type.
-     * {@code github.com} is detected as {@link GitForgeType#GITHUB}; all other
-     * hosts fall back to {@link GitForgeType#GITLAB}. Use the 5-arg constructor
-     * to explicitly specify {@link GitForgeType#GITEA} for Gitea / Forgejo hosts.
+     * {@code github.com} → {@link GitForgeType#GITHUB}; all other hosts → {@link GitForgeType#GITLAB}.
      */
     public GitSource(String repoUrl, String directory, String branch, String token) {
         this(repoUrl, directory, branch, token, detectForge(repoUrl));
@@ -90,7 +122,9 @@ public class GitSource implements FileSource {
     public static String buildRawBase(String repoUrl, String branch, GitForgeType gitForgeType) {
         String url = StringUtils.removeEnd(repoUrl, "/");
         URI uri = URI.create(url);
-        String base = uri.getScheme() + "://" + uri.getHost() + uri.getPath();
+        int port = uri.getPort();
+        String authority = port == -1 ? uri.getHost() : uri.getHost() + ":" + port;
+        String base = uri.getScheme() + "://" + authority + uri.getPath();
         return switch (gitForgeType) {
             case GITHUB -> "https://raw.githubusercontent.com" + uri.getPath() + "/" + branch;
             case GITLAB -> base + "/-/raw/" + branch;
@@ -98,27 +132,152 @@ public class GitSource implements FileSource {
         };
     }
 
+    /**
+     * Returns the forge-specific REST API base URL for the given repository.
+     * <ul>
+     *   <li>GitHub  → {@code https://api.github.com/repos/{owner}/{repo}}</li>
+     *   <li>GitLab  → {@code https://{host}/api/v4/projects/{url-encoded-path}}</li>
+     *   <li>Gitea   → {@code https://{host}/api/v1/repos/{owner}/{repo}}</li>
+     * </ul>
+     */
+    public static String buildApiBase(String repoUrl, String branch, GitForgeType forge) {
+        String url = StringUtils.removeEnd(repoUrl, "/");
+        URI uri = URI.create(url);
+        int port = uri.getPort();
+        String authority = port == -1 ? uri.getHost() : uri.getHost() + ":" + port;
+        String path = uri.getPath(); // e.g., "/owner/repo"
+
+        return switch (forge) {
+            case GITHUB -> "https://api.github.com/repos" + path;
+            case GITLAB -> {
+                // GitLab project path uses %2F instead of / between namespace components
+                String encodedPath = path.substring(1).replace("/", "%2F");
+                yield uri.getScheme() + "://" + authority + "/api/v4/projects/" + encodedPath;
+            }
+            case GITEA -> uri.getScheme() + "://" + authority + "/api/v1/repos" + path;
+        };
+    }
+
+    // -------------------------------------------------------------------------
+    // listFiles
+    // -------------------------------------------------------------------------
+
     @Override
     public Map<String, Optional<Instant>> listFiles() throws IOException {
+        PathMatcher matcher = buildMatcher(filemask);
+        List<String> paths = switch (gitForgeType) {
+            case GITHUB -> listFilesGitHub(matcher);
+            case GITLAB -> listFilesGitLab(matcher);
+            case GITEA -> listFilesGitea(matcher);
+        };
         LinkedHashMap<String, Optional<Instant>> result = new LinkedHashMap<>();
-        fetch(directory + "/index.txt").lines()
-                .map(String::trim)
-                .filter(l -> !l.isEmpty() && !l.startsWith("#"))
-                .forEach(name -> result.put(name, Optional.empty()));
+        for (String p : paths) {
+            result.put(p, Optional.empty());
+        }
         return result;
     }
+
+    private List<String> listFilesGitHub(PathMatcher matcher) throws IOException {
+        String url = apiBaseUrl + "/git/trees/" + branch + "?recursive=1";
+        String json = fetchApi(url);
+        return parseGitHubTree(json, matcher);
+    }
+
+    private List<String> listFilesGitLab(PathMatcher matcher) throws IOException {
+        String encodedDir = URLEncoder.encode(directory, StandardCharsets.UTF_8);
+        String url = apiBaseUrl + "/repository/tree?path=" + encodedDir
+                + "&recursive=true&ref=" + branch + "&per_page=100";
+        String json = fetchApi(url);
+        return parseGitLabTree(json, matcher);
+    }
+
+    private List<String> listFilesGitea(PathMatcher matcher) throws IOException {
+        String url = apiBaseUrl + "/git/trees/" + branch + "?recursive=true";
+        String json = fetchApi(url);
+        return parseGitHubTree(json, matcher); // same JSON structure as GitHub
+    }
+
+    /**
+     * Parses a GitHub/Gitea tree API response.
+     * Expected: {@code { "tree": [ { "path": "...", "type": "blob"|"tree" } ], "truncated": bool }}
+     */
+    private List<String> parseGitHubTree(String json, PathMatcher matcher) throws IOException {
+        JsonNode root = new ObjectMapper().readTree(json);
+        if (root.path("truncated").asBoolean(false)) {
+            log.warn("GitHub/Gitea tree response is truncated; some files under '{}' may be missing",
+                    directory);
+        }
+        JsonNode tree = root.path("tree");
+        String dirPrefix = directory.isEmpty() ? "" : directory + "/";
+        List<String> paths = new ArrayList<>();
+        for (JsonNode node : tree) {
+            if (!"blob".equals(node.path("type").asText())) continue;
+            String p = node.path("path").asText();
+            if (!dirPrefix.isEmpty() && !p.startsWith(dirPrefix)) continue;
+            String rel = dirPrefix.isEmpty() ? p : p.substring(dirPrefix.length());
+            if (rel.isEmpty()) continue;
+            if (isVenvPath(Path.of(rel))) continue;
+            if (!matchesMask(rel, matcher)) continue;
+            paths.add(rel);
+        }
+        Collections.sort(paths);
+        return paths;
+    }
+
+    /**
+     * Parses a GitLab repository tree API response.
+     * Expected: JSON array {@code [ { "path": "...", "type": "blob"|"tree" } ]}
+     * Paths in the response are relative to the repo root, so the {@code directory}
+     * prefix is stripped.
+     */
+    private List<String> parseGitLabTree(String json, PathMatcher matcher) throws IOException {
+        JsonNode root = new ObjectMapper().readTree(json);
+        String dirPrefix = directory.isEmpty() ? "" : directory + "/";
+        List<String> paths = new ArrayList<>();
+        for (JsonNode node : root) {
+            if (!"blob".equals(node.path("type").asText())) continue;
+            String p = node.path("path").asText();
+            if (!dirPrefix.isEmpty() && !p.startsWith(dirPrefix)) continue;
+            String rel = dirPrefix.isEmpty() ? p : p.substring(dirPrefix.length());
+            if (rel.isEmpty()) continue;
+            if (isVenvPath(Path.of(rel))) continue;
+            if (!matchesMask(rel, matcher)) continue;
+            paths.add(rel);
+        }
+        Collections.sort(paths);
+        return paths;
+    }
+
+    // -------------------------------------------------------------------------
+    // readFile
+    // -------------------------------------------------------------------------
 
     @Override
     public String readFile(String name) throws IOException {
         return fetch(directory + "/" + name);
     }
 
+    // -------------------------------------------------------------------------
+    // HTTP helpers
+    // -------------------------------------------------------------------------
+
     private String fetch(String relativePath) throws IOException {
         String url = rawBaseUrl + "/" + relativePath;
+        return httpGet(url, false);
+    }
+
+    private String fetchApi(String url) throws IOException {
+        return httpGet(url, true);
+    }
+
+    private String httpGet(String url, boolean acceptJson) throws IOException {
         log.debug("GET {}", url);
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .GET();
+        if (acceptJson) {
+            builder.header("Accept", "application/json");
+        }
         if (StringUtils.isNotBlank(token)) {
             builder.header("Authorization", "Bearer " + token);
         }
@@ -133,5 +292,27 @@ public class GitSource implements FileSource {
             throw new IOException("HTTP " + response.statusCode() + " fetching: " + url);
         }
         return response.body();
+    }
+
+    // -------------------------------------------------------------------------
+    // Shared helpers
+    // -------------------------------------------------------------------------
+
+    static boolean isVenvPath(Path relativePath) {
+        for (Path component : relativePath) {
+            if ("venv".equals(component.toString())) return true;
+        }
+        return false;
+    }
+
+    static PathMatcher buildMatcher(String filemask) {
+        if (filemask == null) return null;
+        return FileSystems.getDefault().getPathMatcher("glob:" + filemask);
+    }
+
+    static boolean matchesMask(String relativePath, PathMatcher matcher) {
+        if (matcher == null) return true;
+        Path filename = Path.of(relativePath).getFileName();
+        return filename != null && matcher.matches(filename);
     }
 }
