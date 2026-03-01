@@ -20,15 +20,15 @@ public final class FileSourceFactory {
 
         return switch (config) {
             case ResourceSourceConfig c ->
-                    new ResourceSource(c.directory(), c.filemask());
+                    new ResourceSource(c.directory(), c.filemasks());
 
             case GitSourceConfig c -> c.forge() != null
-                    ? new GitSource(c.repoUrl(), c.directory(), c.branch(), c.token(), c.forge(), c.filemask())
+                    ? new GitSource(c.repoUrl(), c.directory(), c.branch(), c.token(), c.forge(), c.filemasks())
                     : new GitSource(c.repoUrl(), c.directory(), c.branch(), c.token(),
-                            GitSource.detectForge(c.repoUrl()), c.filemask());
+                            GitSource.detectForge(c.repoUrl()), c.filemasks());
 
             case FileSystemSourceConfig c ->
-                    new FileSystemSource(Path.of(c.directory()), c.watch(), c.filemask());
+                    new FileSystemSource(Path.of(c.directory()), c.watch(), c.filemasks());
 
             case S3SourceConfig c -> new S3Source(c);
 

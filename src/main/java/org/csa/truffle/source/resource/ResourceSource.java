@@ -21,16 +21,16 @@ import java.util.stream.Stream;
 /**
  * {@link FileSource} that auto-discovers files from a classpath directory.
  * All regular files under {@code directory} are returned in alphabetical order,
- * with {@code venv/} subtrees and files that do not match {@code filemask} excluded.
+ * with {@code venv/} subtrees and files that do not match any of {@code filemasks} excluded.
  */
 public class ResourceSource implements FileSource {
 
     private final String directory;
-    private final String filemask;
+    private final String[] filemasks;
 
-    public ResourceSource(String directory, String filemask) {
+    public ResourceSource(String directory, String[] filemasks) {
         this.directory = directory;
-        this.filemask = filemask;
+        this.filemasks = filemasks;
     }
 
     public ResourceSource(String directory) {
@@ -41,7 +41,7 @@ public class ResourceSource implements FileSource {
     public Map<String, Optional<Instant>> listFiles() throws IOException {
         URL dirUrl = getClass().getClassLoader().getResource(directory);
         if (dirUrl == null) throw new IOException("Classpath directory not found: " + directory);
-        PathMatcher matcher = buildMatcher(filemask);
+        PathMatcher[] matchers = buildMatchers(filemasks);
 
         List<String> names;
         String protocol = dirUrl.getProtocol();
@@ -57,7 +57,7 @@ public class ResourceSource implements FileSource {
                 names = walk
                         .filter(Files::isRegularFile)
                         .filter(p -> !isVenvPath(dirPath.relativize(p)))
-                        .filter(p -> matchesMask(dirPath.relativize(p).toString().replace('\\', '/'), matcher))
+                        .filter(p -> matchesMasks(dirPath.relativize(p).toString().replace('\\', '/'), matchers))
                         .map(p -> dirPath.relativize(p).toString().replace('\\', '/'))
                         .sorted()
                         .toList();
@@ -76,7 +76,7 @@ public class ResourceSource implements FileSource {
                         .map(e -> fp.isEmpty() ? e.getName() : e.getName().substring(fp.length()))
                         .filter(rel -> !rel.isEmpty())
                         .filter(rel -> !isVenvPath(Path.of(rel)))
-                        .filter(rel -> matchesMask(rel, matcher))
+                        .filter(rel -> matchesMasks(rel, matchers))
                         .sorted()
                         .collect(java.util.stream.Collectors.toList());
             }
@@ -115,14 +115,22 @@ public class ResourceSource implements FileSource {
         return false;
     }
 
-    static PathMatcher buildMatcher(String filemask) {
-        if (filemask == null) return null;
-        return FileSystems.getDefault().getPathMatcher("glob:" + filemask);
+    static PathMatcher[] buildMatchers(String[] filemasks) {
+        if (filemasks == null || filemasks.length == 0) return null;
+        PathMatcher[] matchers = new PathMatcher[filemasks.length];
+        for (int i = 0; i < filemasks.length; i++) {
+            matchers[i] = FileSystems.getDefault().getPathMatcher("glob:" + filemasks[i]);
+        }
+        return matchers;
     }
 
-    static boolean matchesMask(String relativePath, PathMatcher matcher) {
-        if (matcher == null) return true;
+    static boolean matchesMasks(String relativePath, PathMatcher[] matchers) {
+        if (matchers == null) return true;
         Path filename = Path.of(relativePath).getFileName();
-        return filename != null && matcher.matches(filename);
+        if (filename == null) return false;
+        for (PathMatcher matcher : matchers) {
+            if (matcher.matches(filename)) return true;
+        }
+        return false;
     }
 }

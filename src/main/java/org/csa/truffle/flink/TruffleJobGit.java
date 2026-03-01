@@ -26,8 +26,9 @@ public class TruffleJobGit {
                 "https://github.com/csaxx/truffle",
                 "src/main/resources/python",
                 "master",
-                null,   // public repo — no token needed
-                null    // auto-detect forge from URL
+                null,                    // public repo — no token needed
+                null,                    // auto-detect forge from URL
+                new String[]{"*.py"}     // only load Python files
         );
 
         log.info("Loading CSV resources");

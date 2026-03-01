@@ -39,7 +39,7 @@ class ResourceSourceTest {
     @Test
     void listFiles_filemaskFiltersExtension() throws IOException {
         // python_hr_with_comments contains only file_in_both_unchanged.py
-        ResourceSource src = new ResourceSource("python_hr_with_comments", "*.py");
+        ResourceSource src = new ResourceSource("python_hr_with_comments", new String[]{"*.py"});
         Map<String, Optional<Instant>> files = src.listFiles();
         assertEquals(1, files.size());
         assertTrue(files.containsKey("file_in_both_unchanged.py"));

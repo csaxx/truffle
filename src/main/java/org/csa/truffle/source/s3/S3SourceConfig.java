@@ -9,13 +9,13 @@ import org.csa.truffle.source.FileSourceConfig;
  * @param endpointUrl MinIO / custom endpoint; {@code null} = AWS S3
  * @param accessKeyId explicit credential; {@code null} = default credential chain
  * @param secretKey   explicit credential; {@code null} = default credential chain
- * @param filemask    glob pattern matched against the filename; {@code null} means no filter
+ * @param filemasks   glob patterns matched against the filename; {@code null} or empty means no filter
  */
 public record S3SourceConfig(
         String bucket, String prefix,
         String region, String endpointUrl,
         String accessKeyId, String secretKey,
-        String filemask
+        String[] filemasks
 ) implements FileSourceConfig {
 
     /**
@@ -31,10 +31,5 @@ public record S3SourceConfig(
     public static S3SourceConfig forMinio(String endpoint, String bucket, String prefix,
                                           String accessKeyId, String secretKey) {
         return new S3SourceConfig(bucket, prefix, "us-east-1", endpoint, accessKeyId, secretKey, null);
-    }
-
-    @Override
-    public FileSourceConfig withFilemask(String filemask) {
-        return new S3SourceConfig(bucket, prefix, region, endpointUrl, accessKeyId, secretKey, filemask);
     }
 }

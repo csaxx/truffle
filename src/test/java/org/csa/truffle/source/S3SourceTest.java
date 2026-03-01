@@ -164,7 +164,7 @@ class S3SourceTest {
         S3Client s3 = mock(S3Client.class);
         stubList(s3, s3obj("scripts/transform.py"), s3obj("scripts/notes.txt"));
 
-        S3Source src = new S3Source(s3, BUCKET, "scripts", "*.py");
+        S3Source src = new S3Source(s3, BUCKET, "scripts", new String[]{"*.py"});
         Map<String, Optional<Instant>> files = src.listFiles();
 
         assertTrue(files.containsKey("transform.py"));

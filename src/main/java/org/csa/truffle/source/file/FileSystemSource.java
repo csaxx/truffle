@@ -19,9 +19,9 @@ import java.util.stream.Stream;
  * {@link FileSource} that auto-discovers files by walking a local directory and
  * watches it recursively for changes via {@link WatchService}.
  *
- * <p>Files under any {@code venv/} subtree are excluded. The {@code filemask}
- * glob is matched against the filename (last path component); pass {@code null}
- * to include all files.
+ * <p>Files under any {@code venv/} subtree are excluded. Each of the {@code filemasks}
+ * globs is matched against the filename (last path component); a file matches if it
+ * matches any pattern. Pass {@code null} or an empty array to include all files.
  */
 public class FileSystemSource implements FileSource {
 
@@ -30,16 +30,16 @@ public class FileSystemSource implements FileSource {
 
     private final Path directory;
     private final boolean watch;
-    private final String filemask;
+    private final String[] filemasks;
     private volatile Runnable changeListener;
     private WatchService watchService;
     private Thread watcherThread;
     private final Map<WatchKey, Path> watchedDirs = new ConcurrentHashMap<>();
 
-    public FileSystemSource(Path directory, boolean watch, String filemask) {
+    public FileSystemSource(Path directory, boolean watch, String[] filemasks) {
         this.directory = directory;
         this.watch = watch;
-        this.filemask = filemask;
+        this.filemasks = filemasks;
     }
 
     public FileSystemSource(Path directory, boolean watch) {
@@ -48,13 +48,13 @@ public class FileSystemSource implements FileSource {
 
     @Override
     public Map<String, Optional<Instant>> listFiles() throws IOException {
-        PathMatcher matcher = buildMatcher(filemask);
+        PathMatcher[] matchers = buildMatchers(filemasks);
         LinkedHashMap<String, Optional<Instant>> result = new LinkedHashMap<>();
         try (Stream<Path> walk = Files.walk(directory)) {
             walk
                     .filter(Files::isRegularFile)
                     .filter(p -> !isVenvPath(directory.relativize(p)))
-                    .filter(p -> matchesMask(directory.relativize(p).toString().replace('\\', '/'), matcher))
+                    .filter(p -> matchesMasks(directory.relativize(p).toString().replace('\\', '/'), matchers))
                     .sorted(Comparator.comparing(
                             p -> directory.relativize(p).toString().replace('\\', '/')))
                     .forEach(file -> {
@@ -119,7 +119,7 @@ public class FileSystemSource implements FileSource {
     }
 
     private void watchLoop() {
-        PathMatcher matcher = buildMatcher(filemask);
+        PathMatcher[] matchers = buildMatchers(filemasks);
         while (!Thread.currentThread().isInterrupted()) {
             WatchKey key;
             try {
@@ -157,7 +157,7 @@ public class FileSystemSource implements FileSource {
                 }
 
                 String name = p.getFileName().toString();
-                if (matchesMask(name, matcher)) {
+                if (matchesMasks(name, matchers)) {
                     relevant = true;
                 }
             }
@@ -195,14 +195,22 @@ public class FileSystemSource implements FileSource {
         return false;
     }
 
-    static PathMatcher buildMatcher(String filemask) {
-        if (filemask == null) return null;
-        return FileSystems.getDefault().getPathMatcher("glob:" + filemask);
+    static PathMatcher[] buildMatchers(String[] filemasks) {
+        if (filemasks == null || filemasks.length == 0) return null;
+        PathMatcher[] matchers = new PathMatcher[filemasks.length];
+        for (int i = 0; i < filemasks.length; i++) {
+            matchers[i] = FileSystems.getDefault().getPathMatcher("glob:" + filemasks[i]);
+        }
+        return matchers;
     }
 
-    static boolean matchesMask(String name, PathMatcher matcher) {
-        if (matcher == null) return true;
+    static boolean matchesMasks(String name, PathMatcher[] matchers) {
+        if (matchers == null) return true;
         Path filename = Path.of(name).getFileName();
-        return filename != null && matcher.matches(filename);
+        if (filename == null) return false;
+        for (PathMatcher matcher : matchers) {
+            if (matcher.matches(filename)) return true;
+        }
+        return false;
     }
 }

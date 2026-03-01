@@ -8,7 +8,6 @@ import org.csa.truffle.scheduler.ScheduledReloader;
 import org.csa.truffle.scheduler.SchedulerConfig;
 import org.csa.truffle.source.FileSourceConfig;
 import org.csa.truffle.source.resource.ResourceSourceConfig;
-import org.graalvm.polyglot.PolyglotException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,18 +49,18 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
      * Backward-compat: uses classpath {@code python/} directory, 5-minute reload interval.
      */
     public ProcessFunctionPython() {
-        this(new ResourceSourceConfig("python"), new SchedulerConfig(Duration.ofMinutes(5)));
+        this(new ResourceSourceConfig("python", new String[]{"*.py"}), new SchedulerConfig(Duration.ofMinutes(5)));
     }
 
     /**
      * Backward-compat: uses classpath {@code python/} directory with a custom interval.
      */
     public ProcessFunctionPython(Duration interval) {
-        this(new ResourceSourceConfig("python"), new SchedulerConfig(interval));
+        this(new ResourceSourceConfig("python", new String[]{"*.py"}), new SchedulerConfig(interval));
     }
 
     /**
-     * Backward-compat: explicit scheduler + source config, wrapped in a default dataset.
+     * Backward-compat: explicit scheduler + source config.
      */
     public ProcessFunctionPython(SchedulerConfig schedulerConfig, FileSourceConfig sourceConfig) {
         this(sourceConfig, schedulerConfig);
@@ -77,7 +76,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
         log.info("Opening: loading Python scripts");
 
         scheduler = new ScheduledReloader(sourceConfig, schedulerConfig,
-                (datasetStatus, newInterpreter) -> {
+                (status, newInterpreter) -> {
                     GraalPyInterpreter oldInterpreter = this.interpreter;
                     this.interpreter = newInterpreter;
                     if (oldInterpreter != null) {

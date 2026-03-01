@@ -153,9 +153,10 @@ cannot determine the mtime for a file. `setChangeListener(Runnable)` and `close(
 default no-op implementations; push-capable sources override them.
 
 All implementations **auto-discover** files by walking/listing their source — no
-`index.txt` is needed. `venv/` subtrees are excluded at any nesting depth. The `filemask`
-glob filters by filename (`null` = no filter). Results are sorted alphabetically.
-`ScheduledReloader` defaults the filemask to `"*.py"` when the config omits one.
+`index.txt` is needed. `venv/` subtrees are excluded at any nesting depth. The `filemasks`
+`String[]` filters by filename — a file matches if its name matches **any** pattern;
+`null` or empty array = no filter (accept all). Results are sorted alphabetically.
+Filemasks are always supplied in the config constructor; no post-construction mutation exists.
 
 Four implementations ship with the project, split into subpackages:
 
@@ -167,13 +168,13 @@ Four implementations ship with the project, split into subpackages:
 | `file.FileSystemSource` | Local filesystem + WatchService | `new FileSystemSourceConfig(path, watch)` |
 
 **Config records and `FileSourceFactory`.** `FileSourceConfig` is a `Serializable` marker
-interface with `filemask()` and `withFilemask(String)`. All record components are
+interface with a single method `filemasks()` returning `String[]`. All record components are
 primitives, Strings, or enums — serialization is guaranteed. `FileSourceFactory.create(FileSourceConfig)`
 is a `final class` with a static factory method; it uses a `switch` on the concrete type
 to instantiate the correct `FileSource`. S3 credential wiring and `Path` conversion live
 here, keeping the source classes free of construction details. `ProcessFunctionPython` stores
 a `FileSourceConfig`; `open()` creates a `ScheduledReloader` which calls the factory. The
-default constructor uses `new ResourceSourceConfig("python")`.
+default constructor uses `new ResourceSourceConfig("python", new String[]{"*.py"})`.
 
 **`resource.ResourceSource`** auto-discovers files from the classpath by walking the
 `{directory}` tree (handles both `file://` filesystem JARs and `jar://` running-from-JAR protocols).
@@ -208,7 +209,7 @@ registers `this::load` as the listener in its constructor.
 
 **Adding a new `FileSource`.** Implement `listFiles()` and `readFile(name)` in a new
 class (place it in an appropriate `source/` subpackage). Also create a config record
-implementing `FileSourceConfig` (with `filemask()` and `withFilemask(String)`), add a
+implementing `FileSourceConfig` (with `filemasks()` returning `String[]`), add a
 corresponding `case` to `FileSourceFactory.create()`, and pass the config to
 `new ProcessFunctionPython(yourConfig, schedulerConfig)`. No other changes needed.
 

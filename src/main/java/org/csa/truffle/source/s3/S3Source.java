@@ -29,17 +29,17 @@ import java.util.TreeMap;
  * by listing objects under the configured prefix. Works with AWS S3 and MinIO.
  *
  * <p>Objects whose key ends with {@code /}, objects under any {@code venv/} subtree,
- * and objects whose filename does not match {@code filemask} are excluded.
+ * and objects whose filename does not match any of {@code filemasks} are excluded.
  * Results are sorted alphabetically by relative key.
  *
  * <p><b>AWS example:</b>
  * <pre>
- *   new S3Source(S3Client.create(), "my-bucket", "", "*.py");
+ *   new S3Source(S3Client.create(), "my-bucket", "", new String[]{"*.py"});
  * </pre>
  *
  * <p><b>MinIO example:</b>
  * <pre>
- *   new S3Source(s3, "my-bucket", "scripts", "*.py");
+ *   new S3Source(s3, "my-bucket", "scripts", new String[]{"*.py"});
  * </pre>
  */
 public class S3Source implements FileSource {
@@ -49,8 +49,8 @@ public class S3Source implements FileSource {
     private final S3Client s3;
     private final boolean ownsClient; // true when this instance built the client
     private final String bucket;
-    private final String prefix;   // never ends with '/', may be empty
-    private final String filemask; // nullable
+    private final String prefix;    // never ends with '/', may be empty
+    private final String[] filemasks; // nullable
 
     /**
      * Constructs an {@code S3Source} from a {@link S3SourceConfig}, building and
@@ -64,25 +64,26 @@ public class S3Source implements FileSource {
      * Call {@link #close()} (or use try-with-resources) to release the client.
      */
     public S3Source(S3SourceConfig config) {
-        this(buildClient(config), true, config.bucket(), config.prefix(), config.filemask());
+        this(buildClient(config), true, config.bucket(), config.prefix(), config.filemasks());
     }
 
-    public S3Source(S3Client s3, String bucket, String prefix, String filemask) {
-        this(s3, false, bucket, prefix, filemask);
+    public S3Source(S3Client s3, String bucket, String prefix, String[] filemasks) {
+        this(s3, false, bucket, prefix, filemasks);
     }
 
     public S3Source(S3Client s3, String bucket, String prefix) {
         this(s3, false, bucket, prefix, null);
     }
 
-    private S3Source(S3Client s3, boolean ownsClient, String bucket, String prefix, String filemask) {
+    private S3Source(S3Client s3, boolean ownsClient, String bucket, String prefix, String[] filemasks) {
         this.s3 = s3;
         this.ownsClient = ownsClient;
         this.bucket = bucket;
         this.prefix = StringUtils.stripEnd(prefix, "/");
-        this.filemask = filemask;
-        log.info("Initialized: bucket={}, prefix={}, filemask={}",
-                bucket, this.prefix.isEmpty() ? "(root)" : this.prefix, filemask);
+        this.filemasks = filemasks;
+        log.info("Initialized: bucket={}, prefix={}, filemasks={}",
+                bucket, this.prefix.isEmpty() ? "(root)" : this.prefix,
+                filemasks != null ? java.util.Arrays.toString(filemasks) : "null");
     }
 
     private static S3Client buildClient(S3SourceConfig config) {
@@ -99,7 +100,7 @@ public class S3Source implements FileSource {
 
     @Override
     public Map<String, Optional<Instant>> listFiles() throws IOException {
-        PathMatcher matcher = buildMatcher(filemask);
+        PathMatcher[] matchers = buildMatchers(filemasks);
         String searchPrefix = prefix.isEmpty() ? "" : prefix + "/";
 
         TreeMap<String, Optional<Instant>> sorted = new TreeMap<>();
@@ -112,7 +113,7 @@ public class S3Source implements FileSource {
                     String rel = obj.key().substring(searchPrefix.length());
                     if (rel.isEmpty()) continue;
                     if (isVenvPath(Path.of(rel))) continue;
-                    if (!matchesMask(rel, matcher)) continue;
+                    if (!matchesMasks(rel, matchers)) continue;
                     sorted.put(rel, Optional.ofNullable(obj.lastModified()));
                 }
             }
@@ -156,14 +157,22 @@ public class S3Source implements FileSource {
         return false;
     }
 
-    static PathMatcher buildMatcher(String filemask) {
-        if (filemask == null) return null;
-        return FileSystems.getDefault().getPathMatcher("glob:" + filemask);
+    static PathMatcher[] buildMatchers(String[] filemasks) {
+        if (filemasks == null || filemasks.length == 0) return null;
+        PathMatcher[] matchers = new PathMatcher[filemasks.length];
+        for (int i = 0; i < filemasks.length; i++) {
+            matchers[i] = FileSystems.getDefault().getPathMatcher("glob:" + filemasks[i]);
+        }
+        return matchers;
     }
 
-    static boolean matchesMask(String relativePath, PathMatcher matcher) {
-        if (matcher == null) return true;
+    static boolean matchesMasks(String relativePath, PathMatcher[] matchers) {
+        if (matchers == null) return true;
         Path filename = Path.of(relativePath).getFileName();
-        return filename != null && matcher.matches(filename);
+        if (filename == null) return false;
+        for (PathMatcher matcher : matchers) {
+            if (matcher.matches(filename)) return true;
+        }
+        return false;
     }
 }

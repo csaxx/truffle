@@ -19,7 +19,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Manages a single dataset backed by a {@link FileLoader}.
+ * Manages loading of files backed by a {@link FileLoader}.
  * Performs an initial synchronous reload then schedules periodic background reloads
  * at the configured interval.
  *
@@ -56,9 +56,7 @@ public class ScheduledReloader implements AutoCloseable {
 
     public ScheduledReloader(FileSourceConfig sourceConfig, SchedulerConfig schedulerConfig,
                              ScheduledReloadCallback callback) {
-        this(FileSourceFactory.create(
-                sourceConfig.filemask() == null ? sourceConfig.withFilemask("*.py") : sourceConfig
-        ), schedulerConfig, callback);
+        this(FileSourceFactory.create(sourceConfig), schedulerConfig, callback);
     }
 
     public ScheduledReloader(FileSource source, SchedulerConfig schedulerConfig,
