@@ -106,11 +106,16 @@ public class ScheduledReloader implements AutoCloseable {
                 .anyMatch(c -> c.status() != FileChangeInfo.ChangeStatus.UNMODIFIED);
 
         if (needsRebuild) {
+            GraalPyInterpreter interpreter;
             try {
-                GraalPyInterpreter interpreter = new GraalPyInterpreter(loader.getFileContents());
+                interpreter = new GraalPyInterpreter(loader.getFileContents());
+            } catch (Exception e) {
+                throw new IOException("GraalPyInterpreter initialization failed: " + e.getMessage(), e);
+            }
+            try {
                 callback.onReload(result.status(), interpreter);
             } catch (Exception e) {
-                log.error("Interpreter rebuild failed: {}", e.getMessage(), e);
+                log.error("Reload callback failed: {}", e.getMessage(), e);
             }
         }
 
@@ -136,7 +141,11 @@ public class ScheduledReloader implements AutoCloseable {
                             streak.toSeconds(), grace.toSeconds(), e.getMessage());
                     fatalError = new RuntimeException(msg, e);
                     log.error("Grace period exceeded: {}", msg);
-                    callback.onReload(loader.getStatus(), null);
+                    try {
+                        callback.onReload(loader.getStatus(), null);
+                    } catch (Exception callbackEx) {
+                        log.error("Grace-period callback failed: {}", callbackEx.getMessage(), callbackEx);
+                    }
                 }
             }
         }

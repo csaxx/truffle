@@ -88,8 +88,8 @@ public class GraalPyInterpreter implements AutoCloseable {
      * No-op if the file is not loaded or does not define the member.
      */
     public void execute(String filename, String memberName, Object... args) {
-        Value fn = getMember(filename, memberName);
-        if (fn != null) fn.execute(args);
+        Value member = getMember(filename, memberName);
+        if (member != null) member.execute(args);
     }
 
     /**
@@ -99,7 +99,7 @@ public class GraalPyInterpreter implements AutoCloseable {
         fileContexts.values().stream()
                 .map(fc -> fc.getMember(memberName))
                 .filter(Objects::nonNull)
-                .forEach(fn -> fn.execute(args));
+                .forEach(member -> member.execute(args));
     }
 
     @Override
