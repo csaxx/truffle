@@ -62,22 +62,22 @@ This is an Apache Flink 2.x streaming job that reads bounded CSV data, transform
 ### Pipeline flow
 
 ```
-classpath CSVs (sales_q{1,2,3}.csv)
+classpath CSVs (data/sales_q{1,2,3}.csv)
   → TruffleJob#loadCsvLines()        // loads lines into List<String>
   → TruffleJob#runTransform(lines, fn)
       → env.fromData(lines)          // bounded DataStream<String>
-      → .process(fn)                 // SalesTransformFunction or V2
+      → .process(fn)                 // ProcessFunctionJava or ProcessFunctionPython
       → executeAndCollect()          // triggers execution, collects locally
   → TruffleJob#writeOutput()         // writes CSV header + rows
-  → output/v1/sales_transformed.csv  (SalesTransformFunction)
-  → output/v2/sales_transformed.csv  (SalesTransformFunctionV2)
+  → output/java/sales_transformed.csv    (ProcessFunctionJava)
+  → output/python/sales_transformed.csv  (ProcessFunctionPython)
 ```
 
 ### Key design choices
 
 - **No Flink sink:** results are collected via `DataStream.executeAndCollect()` and written to disk with plain Java I/O. This avoids the deprecated `SinkFunction` / `RichSinkFunction` API from Flink 1.x.
 - **Parallelism 1:** set explicitly in `TruffleJob` to keep local output deterministic and single-file.
-- **CSV resources are loaded before the Flink graph is built** — the driver reads them from the classpath into a `List<String>` and feeds the list to `env.fromData()`. All three quarterly files are concatenated; header rows are filtered inside `SalesTransformFunction.processElement`.
+- **CSV resources are loaded before the Flink graph is built** — the driver reads them from the classpath into a `List<String>` and feeds the list to `env.fromData()`. All three quarterly files are concatenated; header rows are filtered inside `ProcessFunctionJava.processElement`.
 - **`ProcessFunctionPython` delegates entirely to Python** — `processElement` iterates all loaded Python files and calls each file's `process_element(line, out)` in order. The Python function calls `out.collect(...)` directly via GraalPy polyglot interop; no return value is used. This means all output routing logic lives in Python, not Java.
 
 ### Project goal: Python-scriptable Flink ProcessFunctions
@@ -101,9 +101,9 @@ Construct it by passing a `Map<String, String>` of filename → Python source co
 **`GraalPyContext`** (`src/main/java/org/csa/truffle/graal/GraalPyContext.java`) is a
 class that pairs a GraalPy `Context` with its filename and a `Map<String, Value>` member
 cache. `getMember(String memberName)` returns the cached `Value` for the named Python
-binding, or `null` if the module does not define that name. Results are cached on first
-access via `computeIfAbsent`; a missing member causes a polyglot lookup on each call
-(absent members are the exception, not the norm).
+binding, or throws `NoSuchElementException` if the module does not define that name.
+Results are cached on first access; a missing member triggers a polyglot lookup on each
+call (absent members are the exception, not the norm).
 
 **Per-file context isolation.** Each file gets its own `Context`. This prevents name
 collisions — two files can both define `process_element` without one overwriting the
@@ -121,7 +121,8 @@ immediately at construction time.
 **API.**
 - `getLoadedFileNames()` — returns filenames in index order.
 - `getMember(filename, memberName)` — returns the cached `Value` for the named member
-  in the given file, or `null` if the file is not loaded or does not define that member.
+  in the given file; throws `NoSuchElementException` if the file is not loaded or does
+  not define that member.
 - `getMembers(memberName)` — returns one `Value` per file that defines `memberName`,
   in index order; files that do not define the member are omitted.
 - `execute(filename, memberName, args...)` — calls the named function in the given file;
@@ -131,86 +132,81 @@ immediately at construction time.
 - `close()` — closes all per-file `Context`s. Use try-with-resources.
 
 **Adding a new Python transform file.** Create the `.py` file under
-`src/main/resources/python/` with a `process_element(line, out)` function, then add
-its filename to `python/index.txt`. No Java changes are required. The function receives
-the raw CSV line as a string and the Flink `Collector<String>`; call `out.collect(...)`
-to emit output rows.
+`src/main/resources/python/` with a `process_element(line, out)` function. No Java
+changes are required and no `index.txt` entry is needed — files are auto-discovered by
+`ResourceSource`. The function receives the raw CSV line as a string and the Flink
+`Collector<String>`; call `out.collect(...)` to emit output rows.
 
-### PythonSource implementations
+### FileSource implementations
 
-These classes (in `org.csa.truffle.graal.source`) are used by `ProcessFunctionPython`
-via `PythonSourceFactory` to supply Python file contents. They are separate from the
-`FileSource` hierarchy used by `FileLoader`.
+These classes (in `org.csa.truffle.source`) are used by `ProcessFunctionPython` via
+`FileSourceFactory` to supply Python file contents to `FileLoader` and `ScheduledReloader`.
 
-**`PythonSource` interface.** `listFiles()` returns the ordered filename list;
-`readFile(name)` returns file content. `getDataAge()` returns `Optional<Instant>` —
-the latest modification timestamp across all currently listed files, or
-`Optional.empty()` if the source cannot determine this. `FilePythonSource` implements
-it via `Files.getLastModifiedTime()`; `S3PythonSource` via `HeadObjectRequest`
-(metadata-only, no download). `ResourcePythonSource` and `GitPythonSource` inherit
-the no-op default.
+**`FileSource` interface** (`org.csa.truffle.source.FileSource`). `listFiles()` returns
+an ordered `Map<String, Optional<Instant>>` of filename → modification timestamp;
+`readFile(name)` returns file content. The optional timestamp is `empty()` if the source
+cannot determine the mtime for a file. `setChangeListener(Runnable)` and `close()` have
+default no-op implementations; push-capable sources override them.
+
+All implementations **auto-discover** files by walking/listing their source — no
+`index.txt` is needed. `venv/` subtrees are excluded at any nesting depth. The `filemask`
+glob filters by filename (`null` = no filter). Results are sorted alphabetically.
+`ScheduledReloader` defaults the filemask to `"*.py"` when the config omits one.
 
 Four implementations ship with the project, split into subpackages:
 
 | Implementation (package) | Source | Config record |
 |--------------------------|--------|---------------|
-| `resource.ResourcePythonSource` | Classpath JAR | `new ResourceSourceConfig("python")` |
-| `resource.GitPythonSource` | GitHub / GitLab / Gitea via HTTP | `new GitSourceConfig(url, dir, branch, token, forge)` |
-| `s3.S3PythonSource` | AWS S3 / MinIO | `new S3SourceConfig(...)` or static helpers |
-| `file.FilePythonSource` | Local filesystem + WatchService | `new FileSourceConfig(path, watch)` |
+| `resource.ResourceSource` | Classpath JAR | `new ResourceSourceConfig("python")` |
+| `git.GitSource` | GitHub / GitLab / Gitea via HTTP | `new GitSourceConfig(url, dir, branch, token, forge)` |
+| `s3.S3Source` | AWS S3 / MinIO | `new S3SourceConfig(...)` or static helpers |
+| `file.FileSystemSource` | Local filesystem + WatchService | `new FileSystemSourceConfig(path, watch)` |
 
-**Config records and `PythonSourceFactory`.** `PythonSourceConfig` is a marker interface
-extended by the four config record types above. All record components are primitives,
-Strings, or enums — serialization is guaranteed. `PythonSourceFactory.create(PythonSourceConfig)`
+**Config records and `FileSourceFactory`.** `FileSourceConfig` is a `Serializable` marker
+interface with `filemask()` and `withFilemask(String)`. All record components are
+primitives, Strings, or enums — serialization is guaranteed. `FileSourceFactory.create(FileSourceConfig)`
 is a `final class` with a static factory method; it uses a `switch` on the concrete type
-to instantiate the correct `PythonSource`. S3 credential wiring and `Path` conversion live
+to instantiate the correct `FileSource`. S3 credential wiring and `Path` conversion live
 here, keeping the source classes free of construction details. `ProcessFunctionPython` stores
-a `PythonSourceConfig` (not a lambda); `open()` calls the factory to build the source. The
+a `FileSourceConfig`; `open()` creates a `ScheduledReloader` which calls the factory. The
 default constructor uses `new ResourceSourceConfig("python")`.
 
-**`resource.ResourcePythonSource`** reads `{directory}/index.txt` from the classpath, then
-loads each listed `.py` file from `{directory}/{name}`.
+**`resource.ResourceSource`** auto-discovers files from the classpath by walking the
+`{directory}` tree (handles both `file://` filesystem JARs and `jar://` running-from-JAR protocols).
 
-**`resource.GitPythonSource`** fetches `{directory}/index.txt` and each listed file
-directly from a Git repository via raw-content HTTP — no clone required. The forge is
-identified by `GitForgeType` (GITHUB, GITLAB, GITEA/Forgejo); pass `null` in
-`GitSourceConfig` to auto-detect from the URL:
-- **GitHub** (`github.com`): `https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{directory}/{file}`
-- **GitLab** (other hosts): `https://{host}/{path}/-/raw/{branch}/{directory}/{file}`
-- **Gitea / Forgejo**: `https://{host}/{path}/raw/branch/{branch}/{directory}/{file}`
+**`git.GitSource`** auto-discovers files in a Git repository via the forge's tree API —
+no clone required. Supports GitHub, GitLab, and Gitea/Forgejo. The forge is identified
+by `GitForgeType` (GITHUB, GITLAB, GITEA); pass `null` in `GitSourceConfig` to
+auto-detect from the URL (github.com → GITHUB, all others → GITLAB). Authentication:
+set `token`; pass `null` for public repos. File contents are fetched via raw-content
+HTTP. `GitSource` has a 7-arg public constructor accepting a pre-built `apiBaseUrl` for
+test isolation.
 
-Authentication: set `token` in `GitSourceConfig`; pass `null` for public repositories.
-The token is sent as `Authorization: Bearer {token}`.
-
-**`s3.S3PythonSource`** reads `{prefix}/index.txt` and each listed file as S3 objects via
-the AWS SDK v2 `S3Client`. `S3SourceConfig` has two static helpers:
+**`s3.S3Source`** auto-discovers files via `listObjectsV2Paginator` (mtime comes free
+from listing, no extra `HeadObject` calls). `S3SourceConfig` has two static helpers:
 - `S3SourceConfig.forAws(bucket, prefix)` — AWS S3 with the default credential chain.
 - `S3SourceConfig.forMinio(endpoint, bucket, prefix, accessKeyId, secretKey)` — MinIO /
   custom endpoint with explicit credentials.
-An empty `prefix` fetches objects directly from the bucket root.
-`PythonSourceFactory` builds the `S3Client` from config fields; callers need not touch
-the AWS SDK directly.
+An empty `prefix` fetches objects from the bucket root.
+`FileSourceFactory` builds the `S3Client` from config fields.
 
-**`file.FilePythonSource`** reads `index.txt` and `.py` files from a local directory using
-`Files.readString`. The `watch` boolean in `FileSourceConfig` controls whether it starts
-a `WatchService` thread. When watching, `setChangeListener` starts a daemon thread that
-monitors the directory for `ENTRY_CREATE`, `ENTRY_MODIFY`, and `ENTRY_DELETE` events.
-When a `.py` file or `index.txt` changes, the watcher debounces 100 ms then calls the
-registered callback. Call `close()` (or use try-with-resources) to stop the watcher thread.
+**`file.FileSystemSource`** auto-discovers files from a local directory using
+`Files.readString`. The `watch` boolean in `FileSystemSourceConfig` controls whether it
+starts a `WatchService` daemon thread. When watching, `setChangeListener` monitors the
+directory for `ENTRY_CREATE`, `ENTRY_MODIFY`, and `ENTRY_DELETE` events, debounces 100 ms,
+then calls the registered callback. Call `close()` (or use try-with-resources) to stop
+the watcher thread.
 
-**Push-notification protocol** (`setChangeListener`). `PythonSource` extends `Closeable`
-and has two default methods: `setChangeListener(Runnable onChanged)` (no-op) and `close()`
-(no-op). Sources that can detect changes (`FilePythonSource`) override `setChangeListener`
-to start a watcher; pull-only sources inherit the no-op default.
+**Push-notification protocol** (`setChangeListener`). `FileSource` has a default no-op
+`setChangeListener(Runnable onChanged)`. Sources that can detect changes (`FileSystemSource`)
+override it to start a watcher; pull-only sources inherit the no-op default. `FileLoader`
+registers `this::load` as the listener in its constructor.
 
-**Adding a new `PythonSource`.** Implement `listFiles()` and `readFile(name)` in a new
-class (place it in an appropriate `graal/source/` subpackage). Also create a config
-record implementing `PythonSourceConfig`, add a corresponding `case` to
-`PythonSourceFactory.create()`, and pass the config to
-`new ProcessFunctionPython(yourConfig)`. No other changes needed.
-If your source can efficiently retrieve file modification times, also override
-`getDataAge()` to return `Optional.of(latestInstant)`. Otherwise inherit the no-op
-default, which causes `ReloadResult.dataAge()` to be empty for that source.
+**Adding a new `FileSource`.** Implement `listFiles()` and `readFile(name)` in a new
+class (place it in an appropriate `source/` subpackage). Also create a config record
+implementing `FileSourceConfig` (with `filemask()` and `withFilemask(String)`), add a
+corresponding `case` to `FileSourceFactory.create()`, and pass the config to
+`new ProcessFunctionPython(yourConfig, schedulerConfig)`. No other changes needed.
 
 ### FileLoader
 
@@ -220,51 +216,55 @@ modification timestamps.
 
 **`load()`** (re)reads the file list from `source.listFiles()`. On the first call every file is
 read; on subsequent calls a file is re-read only when its mtime has advanced (or the source cannot
-provide a timestamp). Files removed from `index.txt` are evicted from the cache. **Never throws**
-— I/O errors are captured and returned in the `LoadResult`. Updates `LoadStatus` on every call
-regardless of outcome.
+provide a timestamp). Files no longer returned by `listFiles()` are evicted from the cache.
+**Never throws** — I/O errors are captured and returned in the `LoadResult`. Updates
+`FileLoaderStatus` on every call regardless of outcome.
 
 **`LoadResult`** (`src/main/java/org/csa/truffle/loader/LoadResult.java`) is the return type of
 `load()`. It is a record with four fields:
 - `success` (`boolean`) — `true` when no I/O error occurred.
-- `status` — the loader's `LoadStatus` instance (same reference as `getStatus()`).
-- `fileContents` (`Map<String, String>`) — unmodifiable snapshot in index order; `null` on failure.
-- `error` (`Exception`) — the caught `IOException`; `null` on success.
+- `status` — the loader's `FileLoaderStatus` instance (same reference as `getStatus()`).
+- `changes` (`List<FileChangeInfo>`) — per-file change details (ADDED / UNMODIFIED / MODIFIED /
+  REMOVED); non-null on success, `null` on failure.
+- `error` (`Exception`) — the caught exception; `null` on success.
 
-**`LoadCallback`** (`src/main/java/org/csa/truffle/loader/LoadCallback.java`) is a two-method
-interface fired after every `load()` attempt. Exactly one method is called per invocation:
-- `reloaded(Map<String, String> fileContents, LoadStatus status)` — called on every successful load
-  (whether or not any file changed).
-- `error(LoadStatus status, Exception e)` — called when an I/O error occurs.
+**`FileChangeInfo`** (`src/main/java/org/csa/truffle/loader/FileChangeInfo.java`) is a record
+with `filePath`, `modifiedAt` (`Optional<Instant>`), and `status` (`ChangeStatus` enum:
+ADDED, UNMODIFIED, MODIFIED, REMOVED).
+
+**`FileLoader.FileLoadCallback`** is a `@FunctionalInterface` inner interface fired after every
+`load()` attempt with a single method: `onReload(LoadResult result)`.
 
 **`getFileContents()`** returns a defensive `LinkedHashMap<String, String>` snapshot in index order.
 
-**`getStatus()`** returns the `LoadStatus` instance. `LoadStatus` fields are all `volatile`:
+**`getStatus()`** returns the `FileLoaderStatus` instance. Fields are package-private (written by
+`FileLoader`) with public getters:
 - `lastCheckedAt` — set on every `load()` call; `null` until the first call.
 - `lastChangedAt` — set only when `load()` detects a change.
+- `lastSuccessAt` — set on every successful `load()`.
+- `lastDataAge` — max mtime across all listed files from the most recent load; `null` if none reported.
 - `loadedFiles` — `Set<String>` snapshot of currently cached filenames.
-- `lastErrorAt` / `lastError` / `firstErrorAt` — error streak tracking (same semantics as `ScheduledReloader`).
+- `lastErrorAt` / `lastError` / `firstErrorAt` — error streak tracking.
 
-**Push-notification.** `FileLoader` calls `source.setChangeListener(this::doReloadOnChange)` in
-its constructor. When a push-capable source fires the listener, `doReloadOnChange` calls `load()`
-automatically (no exception handling needed — `load()` never throws). Pull-only sources inherit
-the no-op default and are unaffected.
+**Push-notification.** `FileLoader` calls `source.setChangeListener(this::load)` in its
+constructor. When a push-capable source fires the listener, `load()` runs automatically.
+Pull-only sources inherit the no-op default and are unaffected.
 
 **`close()`** delegates to `source.close()`. Always use try-with-resources.
 
-**Constructors:** `FileLoader(FileSource source)` and `FileLoader(FileSource source, LoadCallback callback)`.
+**Constructors:** `FileLoader(FileSource source)` and `FileLoader(FileSource source, FileLoader.FileLoadCallback callback)`.
 
 **`FileLoaderTest`** (`src/test/java/org/csa/truffle/loader/FileLoaderTest.java`) covers
-Cases 1–4 (removed / added / unchanged / changed files), `LoadStatus` field tracking, callback
-firing, and push-notification integration via `NotifyingSource` — an inner test helper that
-captures the registered listener and exposes `triggerChange()` to fire it synchronously without a
-real watcher. Uses `SwitchableFileSource` and the existing `python_hr_v1` / `python_hr_v2` test
-resources.
+Cases 1–4 (removed / added / unchanged / changed files), `FileLoaderStatus` field tracking,
+callback firing, and push-notification integration via `NotifyingSource` — an inner test helper
+that captures the registered listener and exposes `triggerChange()` to fire it synchronously
+without a real watcher. Uses `SwitchableFileSource` and the existing `python_hr_v1` /
+`python_hr_v2` test resources.
 
 **`FileLoaderResultTest`** (`src/test/java/org/csa/truffle/loader/FileLoaderResultTest.java`)
-exercises `LoadResult` fields and `LoadCallback` dispatch in isolation using `ResourceSource` and
-an inline `FailingSource`. Covers all combinations of success/failure × result fields × callback
-routing (12 tests).
+exercises `LoadResult` fields and `FileLoadCallback` dispatch in isolation using `ResourceSource`
+and an inline `FailingSource`. Covers all combinations of success/failure × result fields ×
+callback routing (12 tests).
 
 ### Scheduled reload
 
@@ -283,25 +283,29 @@ manages a single dataset backed by a `FileLoader` and drives periodic polling:
 
 **Constructors:**
 ```java
-new ScheduledReloader(FileSourceConfig sourceConfig, SchedulerConfig schedulerConfig, ReloadCallback callback)
-new ScheduledReloader(FileSource source,            SchedulerConfig schedulerConfig, ReloadCallback callback)
+new ScheduledReloader(FileSourceConfig sourceConfig, SchedulerConfig schedulerConfig, ScheduledReloadCallback callback)
+new ScheduledReloader(FileSource source,            SchedulerConfig schedulerConfig, ScheduledReloadCallback callback)
 ```
 
-**`ReloadCallback`** is a `@FunctionalInterface` with a single method:
+**`ScheduledReloader.ScheduledReloadCallback`** is a `@FunctionalInterface` inner interface with
+a single method:
 ```java
 void onReload(FileLoaderStatus status, GraalPyInterpreter interpreter)
 ```
-The callback is fired on every reload that detects changed files (including the initial synchronous
-load on `start()`). When the grace period is exceeded, the callback is fired once more with
-`interpreter = null` to let the caller clean up.
+The callback is fired **only when changes are detected** (not on every successful poll), including
+the initial synchronous load on `start()`. When the grace period is exceeded, the callback is
+fired once more with `interpreter = null` to let the caller clean up.
 
 **Lifecycle:**
 - `start()` performs an initial **synchronous** reload on the calling thread (guaranteeing
-  data is ready before Flink calls `processElement`), then schedules background reloads via
-  a single-daemon-thread `ScheduledExecutorService` at `schedulerConfig.interval()`.
+  data is ready before Flink calls `processElement`), throws `IOException` if the initial load
+  fails, then schedules background reloads via a single-daemon-thread `ScheduledExecutorService`
+  at `schedulerConfig.interval()`.
 - `checkForFatalError()` — throws the stored `fatalError` if the grace period was exceeded;
   no-op otherwise. Called by `ProcessFunctionPython.processElement()` on every record.
 - `getStatus()` — delegates to `FileLoader.getStatus()` for observable reload timestamps.
+- `getFatalError()` — returns the stored `RuntimeException` if the grace period was exceeded,
+  or `null` otherwise.
 - `getFirstErrorAt()` — returns the start of the current error streak (tracked inside
   `ScheduledReloader`, not `FileLoaderStatus`), or `null` if no errors have occurred.
 - `close()` — calls `executor.shutdownNow()` and `loader.close()`. Use try-with-resources.
@@ -319,8 +323,8 @@ On each successful reload it is cleared to `null`. On the first failed reload it
 
 ### Adding a new ProcessFunction
 
-Extend `ProcessFunction<IN, OUT>` and override `processElement`. Chain it onto the stream in `TruffleJob` with `.process(new YourFunction())`. The existing `SalesTransformFunction` is the reference example.
+Extend `ProcessFunction<IN, OUT>` and override `processElement`. Chain it onto the stream in `TruffleJob` with `.process(new YourFunction())`. The existing `ProcessFunctionJava` is the reference example.
 
 ### Adding a new CSV source
 
-Add the file to `src/main/resources/` and append its name to `TruffleJob.CSV_RESOURCES`. Header detection in `SalesTransformFunction` is based on the literal string `"transactionId"` — update that check if a new source uses a different header.
+Add the file to `src/main/resources/data/` and append its name to `TruffleJob.CSV_RESOURCES`. Header detection in `ProcessFunctionJava` is based on the literal string `"transactionId"` — update that check if a new source uses a different header.
