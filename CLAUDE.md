@@ -158,7 +158,7 @@ All implementations **auto-discover** files by walking/listing their source — 
 `null` or empty array = no filter (accept all). Results are sorted alphabetically.
 Filemasks are always supplied in the config constructor; no post-construction mutation exists.
 
-Four implementations ship with the project, split into subpackages:
+Five implementations ship with the project, split into subpackages:
 
 | Implementation (package) | Source | Config record |
 |--------------------------|--------|---------------|
@@ -166,6 +166,7 @@ Four implementations ship with the project, split into subpackages:
 | `git.GitSource` | GitHub / GitLab / Gitea via HTTP | `new GitSourceConfig(url, dir, branch, token, forge)` |
 | `s3.S3Source` | AWS S3 / MinIO | `new S3SourceConfig(...)` or static helpers |
 | `file.FileSystemSource` | Local filesystem + WatchService | `new FileSystemSourceConfig(path, watch)` |
+| `map.MapFileSource` | In-memory mutable map | `new MapFileSourceConfig(new String[]{"*.py"})` |
 
 **Config records and `FileSourceFactory`.** `FileSourceConfig` is a `Serializable` marker
 interface with a single method `filemasks()` returning `String[]`. All record components are
@@ -201,6 +202,8 @@ starts a `WatchService` daemon thread. When watching, `setChangeListener` monito
 directory for `ENTRY_CREATE`, `ENTRY_MODIFY`, and `ENTRY_DELETE` events, debounces 100 ms,
 then calls the registered callback. Call `close()` (or use try-with-resources) to stop
 the watcher thread.
+
+**`map.MapFileSource`** holds files in a thread-safe in-memory map. Call `put(name, content)` to add or update a file and `remove(name)` to delete one; neither call automatically fires the change listener, allowing callers to batch mutations. Call `triggerChange()` to explicitly push a reload notification. Timestamps are recorded at each `put()` call so `FileLoader` can detect changes efficiently. The matching `MapFileSourceConfig` record carries only the filemasks; `FileSourceFactory` creates an empty source from it — callers who need pre-populated state should instantiate `MapFileSource` directly.
 
 **Push-notification protocol** (`setChangeListener`). `FileSource` has a default no-op
 `setChangeListener(Runnable onChanged)`. Sources that can detect changes (`FileSystemSource`)

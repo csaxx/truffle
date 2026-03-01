@@ -4,6 +4,8 @@ import org.csa.truffle.source.file.FileSystemSource;
 import org.csa.truffle.source.file.FileSystemSourceConfig;
 import org.csa.truffle.source.git.GitSource;
 import org.csa.truffle.source.git.GitSourceConfig;
+import org.csa.truffle.source.map.MapFileSource;
+import org.csa.truffle.source.map.MapFileSourceConfig;
 import org.csa.truffle.source.resource.ResourceSource;
 import org.csa.truffle.source.resource.ResourceSourceConfig;
 import org.csa.truffle.source.s3.S3Source;
@@ -31,6 +33,8 @@ public final class FileSourceFactory {
                     new FileSystemSource(Path.of(c.directory()), c.watch(), c.filemasks());
 
             case S3SourceConfig c -> new S3Source(c);
+
+            case MapFileSourceConfig c -> new MapFileSource(c.filemasks());
 
             default -> throw new IllegalArgumentException(
                     "Unknown SourceConfig type: " + config.getClass().getName());
