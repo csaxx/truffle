@@ -59,7 +59,7 @@ class FileLoaderResultTest {
     @Test
     void loadResult_reloadedCallback_receivesFileContents() throws Exception {
         AtomicReference<List<FileChangeInfo>> received = new AtomicReference<>();
-        FileLoader.LoadCallback callback = (result) -> received.set(result.changes());
+        FileLoader.FileLoadCallback callback = (result) -> received.set(result.changes());
         try (FileLoader loader = new FileLoader(new ResourceSource("python_hr_v1"), callback)) {
             loader.load();
             assertNotNull(received.get());
@@ -70,7 +70,7 @@ class FileLoaderResultTest {
     @Test
     void loadResult_reloadedCallback_receivesStatus() throws Exception {
         AtomicReference<FileLoaderStatus> received = new AtomicReference<>();
-        FileLoader.LoadCallback callback = (result) -> received.set(result.status());
+        FileLoader.FileLoadCallback callback = (result) -> received.set(result.status());
         try (FileLoader loader = new FileLoader(new ResourceSource("python_hr_v1"), callback)) {
             LoadResult result = loader.load();
             assertSame(result.status(), received.get());
@@ -115,7 +115,7 @@ class FileLoaderResultTest {
         AtomicBoolean errorCalled = new AtomicBoolean(false);
         AtomicReference<Exception> receivedEx = new AtomicReference<>();
 
-        FileLoader.LoadCallback callback = (result) -> {
+        FileLoader.FileLoadCallback callback = (result) -> {
             if (!result.success()) errorCalled.set(true);
             receivedEx.set(result.error());
         };
@@ -131,7 +131,7 @@ class FileLoaderResultTest {
     void loadResult_errorCallback_notFired_onSuccess() throws Exception {
         AtomicBoolean errorCalled = new AtomicBoolean(false);
 
-        FileLoader.LoadCallback callback = (result) -> {
+        FileLoader.FileLoadCallback callback = (result) -> {
             if (!result.success()) errorCalled.set(true);
         };
 
@@ -145,7 +145,7 @@ class FileLoaderResultTest {
     void loadResult_reloadedCallback_notFired_onError() throws Exception {
         AtomicBoolean reloadedCalled = new AtomicBoolean(false);
 
-        FileLoader.LoadCallback callback = (result) -> {
+        FileLoader.FileLoadCallback callback = (result) -> {
             if (result.success()) reloadedCalled.set(true);
         };
         try (FileLoader loader = new FileLoader(new FileLoaderTest.FailingSource(), callback)) {

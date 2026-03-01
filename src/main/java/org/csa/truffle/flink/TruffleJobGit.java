@@ -1,6 +1,5 @@
-package org.csa.truffle;
+package org.csa.truffle.flink;
 
-import org.csa.truffle.function.ProcessFunctionPython;
 import org.csa.truffle.scheduler.SchedulerConfig;
 import org.csa.truffle.source.git.GitSourceConfig;
 import org.csa.truffle.source.git.GitSource;

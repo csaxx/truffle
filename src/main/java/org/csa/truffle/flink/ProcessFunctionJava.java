@@ -1,4 +1,4 @@
-package org.csa.truffle.function;
+package org.csa.truffle.flink;
 
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.Collector;

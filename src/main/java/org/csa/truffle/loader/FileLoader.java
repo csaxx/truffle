@@ -20,7 +20,7 @@ import java.util.*;
  * the source cannot provide a timestamp are always re-read. Files that
  * disappear are evicted from the cache.
  *
- * <p>An optional {@link LoadCallback} supplied at construction time is invoked
+ * <p>An optional {@link FileLoadCallback} supplied at construction time is invoked
  * after every {@link #load()} attempt.
  *
  * <p>Operational state is tracked in a {@link FileLoaderStatus} instance;
@@ -32,8 +32,8 @@ public class FileLoader implements Closeable {
      * Callback fired by {@link FileLoader#load()} after each attempt.
      */
     @FunctionalInterface
-    public interface LoadCallback {
-        void notify(LoadResult result);
+    public interface FileLoadCallback {
+        void onReload(LoadResult result);
     }
 
     private static final Logger log = LoggerFactory.getLogger(FileLoader.class);
@@ -43,7 +43,7 @@ public class FileLoader implements Closeable {
     /**
      * Optional callback for {@link LoadResult} on {@link #load()}.
      */
-    private final LoadCallback callback;
+    private final FileLoadCallback callback;
 
     /**
      * Ordered cache: filename → current content. Preserved across calls.
@@ -74,7 +74,7 @@ public class FileLoader implements Closeable {
      * @param source   the source to load files from
      * @param callback invoked after every {@link #load()} attempt; {@code null} to disable
      */
-    public FileLoader(FileSource source, LoadCallback callback) {
+    public FileLoader(FileSource source, FileLoadCallback callback) {
         this.source = source;
         this.callback = callback;
 
@@ -99,7 +99,7 @@ public class FileLoader implements Closeable {
      *
      * <p>{@link FileLoaderStatus} is updated on every call regardless of outcome.
      * This method never throws; I/O errors are captured in the returned
-     * {@link LoadResult} and forwarded to the {@link LoadCallback} (if set).
+     * {@link LoadResult} and forwarded to the {@link FileLoadCallback} (if set).
      *
      * @return a {@link LoadResult} describing the outcome; success is
      * {@code true} when no I/O error occurred
@@ -214,7 +214,7 @@ public class FileLoader implements Closeable {
 
         if (callback != null) {
             try {
-                callback.notify(result);
+                callback.onReload(result);
             } catch (Exception e) {
                 log.warn("error notifying callback", e);
             }

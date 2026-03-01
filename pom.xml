@@ -114,7 +114,7 @@
         <version>3.1.0</version>
         <configuration>
           <!-- exec:java target (same JVM) – kept for IDE use -->
-          <mainClass>org.csa.truffle.TruffleJob</mainClass>
+          <mainClass>org.csa.truffle.flink.TruffleJob</mainClass>
           <!-- exec:exec target (separate JVM) – required for Flink 2.x because
                the mini-cluster deserialises the job graph with the JVM system
                classloader; running in a child process puts all deps there.
@@ -123,7 +123,7 @@
           <arguments>
             <argument>-classpath</argument>
             <classpath/>
-            <argument>org.csa.truffle.TruffleJob</argument>
+            <argument>org.csa.truffle.flink.TruffleJob</argument>
           </arguments>
         </configuration>
         <executions>
@@ -134,7 +134,7 @@
               <arguments>
                 <argument>-classpath</argument>
                 <classpath/>
-                <argument>org.csa.truffle.TruffleJobGit</argument>
+                <argument>org.csa.truffle.flink.TruffleJobGit</argument>
               </arguments>
             </configuration>
           </execution>

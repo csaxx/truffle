@@ -38,13 +38,13 @@ public class ScheduledReloader implements AutoCloseable {
      * load on {@code start()}), or when the grace period is exceeded (interpreter is {@code null}).
      */
     @FunctionalInterface
-    public interface ReloadCallback {
+    public interface ScheduledReloadCallback {
         void onReload(FileLoaderStatus status, GraalPyInterpreter interpreter);
     }
 
     private final FileLoader loader;
     private final SchedulerConfig schedulerConfig;
-    private final ReloadCallback callback;
+    private final ScheduledReloadCallback callback;
     private ScheduledExecutorService executor;
 
     volatile RuntimeException fatalError;
@@ -55,12 +55,12 @@ public class ScheduledReloader implements AutoCloseable {
     // -------------------------------------------------------------------------
 
     public ScheduledReloader(FileSourceConfig sourceConfig, SchedulerConfig schedulerConfig,
-                             ReloadCallback callback) {
+                             ScheduledReloadCallback callback) {
         this(FileSourceFactory.create(sourceConfig), schedulerConfig, callback);
     }
 
     public ScheduledReloader(FileSource source, SchedulerConfig schedulerConfig,
-                             ReloadCallback callback) {
+                             ScheduledReloadCallback callback) {
         this.loader = new FileLoader(source);
         this.schedulerConfig = schedulerConfig;
         this.callback = callback;

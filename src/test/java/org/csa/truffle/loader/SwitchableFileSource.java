@@ -1,4 +1,4 @@
-package org.csa.truffle;
+package org.csa.truffle.loader;
 
 import org.csa.truffle.source.FileSource;
 import org.csa.truffle.source.resource.ResourceSource;

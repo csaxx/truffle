@@ -1,6 +1,5 @@
 package org.csa.truffle.loader;
 
-import org.csa.truffle.SwitchableFileSource;
 import org.csa.truffle.source.FileSource;
 import org.junit.jupiter.api.Test;
 
@@ -313,7 +312,7 @@ class FileLoaderTest {
     void onChanged_callback_firedWhenFilesChange() throws Exception {
         AtomicInteger count = new AtomicInteger();
         SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
-        FileLoader.LoadCallback callback = (result) -> {
+        FileLoader.FileLoadCallback callback = (result) -> {
             if (result.success()) count.incrementAndGet();
         };
         try (FileLoader loader = new FileLoader(src, callback)) {
@@ -330,7 +329,7 @@ class FileLoaderTest {
         AtomicInteger count = new AtomicInteger();
         SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
 
-        FileLoader.LoadCallback callback = (result) -> {
+        FileLoader.FileLoadCallback callback = (result) -> {
             if (result.success()) count.incrementAndGet();
         };
 

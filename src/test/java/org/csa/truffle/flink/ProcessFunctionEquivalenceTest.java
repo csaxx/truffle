@@ -1,9 +1,7 @@
-package org.csa.truffle;
+package org.csa.truffle.flink;
 
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
 import org.apache.flink.streaming.util.ProcessFunctionTestHarnesses;
-import org.csa.truffle.function.ProcessFunctionJava;
-import org.csa.truffle.function.ProcessFunctionPython;
 import org.junit.jupiter.api.Test;
 
 import org.apache.commons.io.IOUtils;

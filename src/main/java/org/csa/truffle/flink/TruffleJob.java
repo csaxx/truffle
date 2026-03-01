@@ -1,12 +1,10 @@
-package org.csa.truffle;
+package org.csa.truffle.flink;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.CloseableIterator;
-import org.csa.truffle.function.ProcessFunctionJava;
-import org.csa.truffle.function.ProcessFunctionPython;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
