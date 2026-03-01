@@ -105,13 +105,6 @@
         <configuration>
           <source>21</source>
           <target>21</target>
-          <!-- TODO: remove excludes once ProcessFunctionPython refactor is complete -->
-          <excludes>
-            <exclude>**/ProcessFunctionPython.java</exclude>
-          </excludes>
-          <testExcludes>
-            <testExclude>**/ProcessFunctionEquivalenceTest.java</testExclude>
-          </testExcludes>
         </configuration>
       </plugin>
 

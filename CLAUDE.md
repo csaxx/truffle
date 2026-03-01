@@ -268,57 +268,54 @@ routing (12 tests).
 
 ### Scheduled reload
 
-**`SchedulerConfig`** (`src/main/java/org/csa/truffle/graal/reload/SchedulerConfig.java`)
+**`SchedulerConfig`** (`src/main/java/org/csa/truffle/scheduler/SchedulerConfig.java`)
 is a `Serializable` record with two components: `Duration interval` and `Duration gracePeriod`.
 Passing a config object (rather than a raw `Duration`) to `ProcessFunctionPython` mirrors the
-`PythonSourceConfig` pattern and ensures the value survives Flink serialization across distributed
+`FileSourceConfig` pattern and ensures the value survives Flink serialization across distributed
 operators. The single-arg constructor `SchedulerConfig(interval)` defaults `gracePeriod` to
 `Duration.ZERO`, which means reload errors are tolerated indefinitely (logged but never fatal).
 When `gracePeriod` is positive, background reload failures that persist longer than the grace
 period cause `ScheduledReloader` to store a fatal `RuntimeException`; `ProcessFunctionPython`
 checks for it at the top of every `processElement()` call and re-throws it, failing the Flink task.
 
-**`ReloadResult`** (`src/main/java/org/csa/truffle/graal/reload/ReloadResult.java`)
-is the return type of the reload cycle driven by `ScheduledReloader`. It bundles:
-- `changed` (`boolean`) — whether any file changed during this reload.
-- `reloadedAt` (`Instant`) — wall-clock time captured at the start of the reload call.
-- `dataAge` (`Optional<Instant>`) — latest file mtime from `PythonSource.getDataAge()`;
-  empty for JAR-classpath and Git HTTP sources.
+**`ScheduledReloader`** (`src/main/java/org/csa/truffle/scheduler/ScheduledReloader.java`)
+manages a single dataset backed by a `FileLoader` and drives periodic polling:
 
-**`ScheduledReloader`** (`src/main/java/org/csa/truffle/graal/reload/ScheduledReloader.java`)
-wraps a `GraalPyInterpreter` and drives periodic polling:
+**Constructors:**
+```java
+new ScheduledReloader(FileSourceConfig sourceConfig, SchedulerConfig schedulerConfig, ReloadCallback callback)
+new ScheduledReloader(FileSource source,            SchedulerConfig schedulerConfig, ReloadCallback callback)
+```
+
+**`ReloadCallback`** is a `@FunctionalInterface` with a single method:
+```java
+void onReload(FileLoaderStatus status, GraalPyInterpreter interpreter)
+```
+The callback is fired on every reload that detects changed files (including the initial synchronous
+load on `start()`). When the grace period is exceeded, the callback is fired once more with
+`interpreter = null` to let the caller clean up.
+
+**Lifecycle:**
 - `start()` performs an initial **synchronous** reload on the calling thread (guaranteeing
   data is ready before Flink calls `processElement`), then schedules background reloads via
-  a single-daemon-thread `ScheduledExecutorService` at `config.interval()`.
-- All observable state is `volatile` (immutable `Instant` / record writes are safe):
-  - `lastCheckedAt` — set on every reload (changed or not).
-  - `lastChangedAt` — set only when `ReloadResult.changed()` is `true`.
-  - `lastResult` — the full `ReloadResult` from the most recent reload cycle; `null` until
-    first `start()`.
-  - `lastErrorAt` / `lastError` — set (and never cleared) when a reload throws `IOException`;
-    `null` if no error has occurred.
-  - `firstErrorAt` — start of the current error streak; cleared (`null`) when a reload succeeds.
-  - `fatalError` — set once when the grace period is exceeded; never cleared.
-- When `config.gracePeriod()` is positive and background reloads keep failing, `doReloadQuietly()`
-  tracks the streak start in `firstErrorAt`. Once `Duration.between(firstErrorAt, now) >= gracePeriod`,
-  it stores a descriptive `RuntimeException` in `fatalError`.
-- `checkForFatalError()` — throws the stored `fatalError` if set; no-op otherwise. Called by
-  `ProcessFunctionPython.processElement()` on every record to propagate the failure into Flink.
-- `getFirstErrorAt()` — returns the start of the current error streak, or `null` if no streak.
-- `close()` calls `executor.shutdownNow()`. Always close via try-with-resources or via
-  `ProcessFunctionPython.close()`, which calls both `reloader.close()` and `interpreter.close()`.
+  a single-daemon-thread `ScheduledExecutorService` at `schedulerConfig.interval()`.
+- `checkForFatalError()` — throws the stored `fatalError` if the grace period was exceeded;
+  no-op otherwise. Called by `ProcessFunctionPython.processElement()` on every record.
+- `getStatus()` — delegates to `FileLoader.getStatus()` for observable reload timestamps.
+- `getFirstErrorAt()` — returns the start of the current error streak (tracked inside
+  `ScheduledReloader`, not `FileLoaderStatus`), or `null` if no errors have occurred.
+- `close()` — calls `executor.shutdownNow()` and `loader.close()`. Use try-with-resources.
+
+**Error streak tracking.** `firstErrorAt` is a `volatile Instant` owned by `ScheduledReloader`.
+On each successful reload it is cleared to `null`. On the first failed reload it is set to
+`Instant.now()`; subsequent failures compute `Duration.between(firstErrorAt, now)` and set
+`fatalError` once the streak exceeds `gracePeriod`.
 
 **`ProcessFunctionPython` constructors:**
 - `()` — defaults to `new SchedulerConfig(Duration.ofMinutes(5))` + classpath `python/` dir.
 - `(Duration interval)` — convenience overload; wraps in `SchedulerConfig`.
-- `(SchedulerConfig schedulerConfig, PythonSourceConfig sourceConfig)` — primary constructor.
-
-> **Note:** `ScheduledReloader` and `ProcessFunctionPython` are pending a follow-up refactor
-> to wire through `FileLoader` + `GraalPyInterpreter(Map)` and will not compile until that
-> work is complete. `pom.xml` excludes both files from compilation (and excludes their tests
-> `ProcessFunctionEquivalenceTest` / `ScheduledReloaderTest` from test compilation) via
-> `<excludes>` / `<testExcludes>` in the compiler plugin. Remove those entries once the
-> refactor is done.
+- `(FileSourceConfig sourceConfig, SchedulerConfig schedulerConfig)` — primary constructor.
+- `(SchedulerConfig schedulerConfig, FileSourceConfig sourceConfig)` — alternate arg order.
 
 ### Adding a new ProcessFunction
 

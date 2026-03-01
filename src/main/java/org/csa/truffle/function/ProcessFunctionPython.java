@@ -76,9 +76,8 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
 
         log.info("Opening: loading Python scripts");
 
-        scheduler = new ScheduledReloader();
-        scheduler.register("default", sourceConfig, schedulerConfig,
-                (id, datasetStatus, newInterpreter) -> {
+        scheduler = new ScheduledReloader(sourceConfig, schedulerConfig,
+                (datasetStatus, newInterpreter) -> {
                     if (this.interpreter != null) {
                         this.interpreter.close();
                     }
@@ -114,7 +113,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
 
         for (String file : interpreter.getLoadedFileNames()) {
             try {
-                interpreter.execute(file, "process_elements", line, out);
+                interpreter.execute(file, "process_element", line, out);
             } catch (PolyglotException e) {
                 RuntimeException wrapped = new RuntimeException(
                         "Python error in '" + file + "' processing line: " + line, e);

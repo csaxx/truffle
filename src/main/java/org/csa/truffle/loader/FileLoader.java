@@ -144,7 +144,7 @@ public class FileLoader implements Closeable {
                         changeStatus = ChangeStatus.ADDED;
                         log.info("New file loaded: {}", filePath);
                         changed = true;
-                    } else if (StringUtils.equals(content, previous)) {
+                    } else if (!StringUtils.equals(content, previous)) {
                         changeStatus = ChangeStatus.MODIFIED;
                         log.info("File content updated: {}", filePath);
                         changed = true;
@@ -193,6 +193,7 @@ public class FileLoader implements Closeable {
             status.lastSuccessAt = checkedAt;
             status.lastDataAge = maxDataAge.orElse(null);
             status.loadedFiles = Set.copyOf(newFileContents.keySet());
+            status.firstErrorAt = null;  // clear error streak on success
 
             List<FileChangeInfo> changesCopy = List.copyOf(changes);
             result = new LoadResult(status, changesCopy);
@@ -204,6 +205,9 @@ public class FileLoader implements Closeable {
             // update status
             status.lastErrorAt = checkedAt;
             status.lastError = e;
+            if (status.firstErrorAt == null) {
+                status.firstErrorAt = checkedAt;
+            }
 
             result = new LoadResult(status, e);
         }

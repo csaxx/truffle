@@ -43,6 +43,12 @@ public class FileLoaderStatus {
     Throwable lastError;
 
     /**
+     * Wall-clock time of the first consecutive {@code load()} failure in the current error streak;
+     * cleared to {@code null} when a {@code load()} succeeds.
+     */
+    Instant firstErrorAt;
+
+    /**
      * Ordered snapshot of filenames currently held in the loader's cache; empty until first successful load.
      */
     Set<String> loadedFiles = Set.of();
@@ -65,6 +71,10 @@ public class FileLoaderStatus {
 
     public Throwable getLastError() {
         return lastError;
+    }
+
+    public Instant getFirstErrorAt() {
+        return firstErrorAt;
     }
 
     public Set<String> getLoadedFiles() {
