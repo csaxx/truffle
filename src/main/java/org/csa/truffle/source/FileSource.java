@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Provides the file list and contents for {@link GraalPyInterpreter}.
+ * Provides the file list and contents from a file source.
  * Implementations may load from classpath resources, the filesystem,
  * a database, or an in-memory map.
  */
@@ -30,7 +30,7 @@ public interface FileSource extends Closeable {
     String readFile(String name) throws IOException;
 
     /**
-     * Called once by {@link GraalPyInterpreter} after construction.
+     * Must be called after construction.
      * Implementations that can detect changes (e.g. {@link FileSystemSource})
      * store the callback and invoke it when a change is detected.
      * The default is a no-op (pull-only sources ignore it).

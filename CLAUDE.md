@@ -73,6 +73,10 @@ classpath CSVs (data/sales_q{1,2,3}.csv)
   → output/python/sales_transformed.csv  (ProcessFunctionPython)
 ```
 
+### Formatting style
+
+This project uses the default JetBrains IntelliJ IDEA formatting style for Java code.
+
 ### Key design choices
 
 - **No Flink sink:** results are collected via `DataStream.executeAndCollect()` and written to disk with plain Java I/O. This avoids the deprecated `SinkFunction` / `RichSinkFunction` API from Flink 1.x.

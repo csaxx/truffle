@@ -4,12 +4,17 @@ import org.apache.commons.lang3.StringUtils;
 import org.csa.truffle.source.FileSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3ClientBuilder;
 import software.amazon.awssdk.services.s3.model.*;
 import software.amazon.awssdk.services.s3.paginators.ListObjectsV2Iterable;
 
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
@@ -42,12 +47,37 @@ public class S3Source implements FileSource {
     private static final Logger log = LoggerFactory.getLogger(S3Source.class);
 
     private final S3Client s3;
+    private final boolean ownsClient; // true when this instance built the client
     private final String bucket;
     private final String prefix;   // never ends with '/', may be empty
     private final String filemask; // nullable
 
+    /**
+     * Constructs an {@code S3Source} from a {@link S3SourceConfig}, building and
+     * owning the {@link S3Client}. Optional config fields are applied only when set:
+     * <ul>
+     *   <li>{@code region} — overrides the SDK default region</li>
+     *   <li>{@code endpointUrl} — redirects to a MinIO / custom endpoint (path-style forced)</li>
+     *   <li>{@code accessKeyId} + {@code secretKey} — uses static credentials instead of
+     *       the default credential chain</li>
+     * </ul>
+     * Call {@link #close()} (or use try-with-resources) to release the client.
+     */
+    public S3Source(S3SourceConfig config) {
+        this(buildClient(config), true, config.bucket(), config.prefix(), config.filemask());
+    }
+
     public S3Source(S3Client s3, String bucket, String prefix, String filemask) {
+        this(s3, false, bucket, prefix, filemask);
+    }
+
+    public S3Source(S3Client s3, String bucket, String prefix) {
+        this(s3, false, bucket, prefix, null);
+    }
+
+    private S3Source(S3Client s3, boolean ownsClient, String bucket, String prefix, String filemask) {
         this.s3 = s3;
+        this.ownsClient = ownsClient;
         this.bucket = bucket;
         this.prefix = StringUtils.stripEnd(prefix, "/");
         this.filemask = filemask;
@@ -55,8 +85,16 @@ public class S3Source implements FileSource {
                 bucket, this.prefix.isEmpty() ? "(root)" : this.prefix, filemask);
     }
 
-    public S3Source(S3Client s3, String bucket, String prefix) {
-        this(s3, bucket, prefix, null);
+    private static S3Client buildClient(S3SourceConfig config) {
+        S3ClientBuilder b = S3Client.builder();
+        if (config.region() != null)
+            b.region(Region.of(config.region()));
+        if (config.endpointUrl() != null)
+            b.endpointOverride(URI.create(config.endpointUrl())).forcePathStyle(true);
+        if (config.accessKeyId() != null && config.secretKey() != null)
+            b.credentialsProvider(StaticCredentialsProvider.create(
+                    AwsBasicCredentials.create(config.accessKeyId(), config.secretKey())));
+        return b.build();
     }
 
     @Override
@@ -99,6 +137,12 @@ public class S3Source implements FileSource {
             throw new IOException(
                     "S3 error fetching s3://" + bucket + "/" + key + ": " + e.getMessage(), e);
         }
+    }
+
+    /** Closes the {@link S3Client} when this instance built it via {@link #S3Source(S3SourceConfig)}. */
+    @Override
+    public void close() {
+        if (ownsClient) s3.close();
     }
 
     // -------------------------------------------------------------------------
