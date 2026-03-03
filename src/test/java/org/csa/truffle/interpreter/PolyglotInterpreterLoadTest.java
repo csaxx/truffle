@@ -21,14 +21,14 @@ class PolyglotInterpreterLoadTest {
     @Test
     void emptyMap_noFilesLoaded() throws Exception {
         try (PolyglotInterpreter interp = build(Map.of())) {
-            assertTrue(interp.getLoadedNames().isEmpty());
+            assertTrue(interp.getContexts().isEmpty());
         }
     }
 
     @Test
     void singleFile_isLoaded() throws Exception {
         try (PolyglotInterpreter interp = build(Map.of("a.py", "x = 1"))) {
-            assertTrue(interp.getLoadedNames().contains("a.py"));
+            assertTrue(interp.getContexts().contains("a.py"));
         }
     }
 
@@ -39,7 +39,7 @@ class PolyglotInterpreterLoadTest {
         files.put("b.py", "x = 2");
         files.put("c.py", "x = 3");
         try (PolyglotInterpreter interp = build(files)) {
-            assertEquals(List.of("a.py", "b.py", "c.py"), interp.getLoadedNames());
+            assertEquals(List.of("a.py", "b.py", "c.py"), interp.getContexts());
         }
     }
 
@@ -91,10 +91,10 @@ class PolyglotInterpreterLoadTest {
         interp.addContext(TruffleLanguage.PYTHON, "a.py", "x = 1");
         interp.addContext(TruffleLanguage.PYTHON, "b.py", "y = 2");
         interp.reset();
-        assertTrue(interp.getLoadedNames().isEmpty());
+        assertTrue(interp.getContexts().isEmpty());
         // interpreter is reusable after reset
         interp.addContext(TruffleLanguage.PYTHON, "c.py", "z = 3");
-        assertEquals(List.of("c.py"), interp.getLoadedNames());
+        assertEquals(List.of("c.py"), interp.getContexts());
         interp.close();
     }
 }

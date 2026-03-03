@@ -88,7 +88,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
         // fires callback synchronously → interpreter is set
         scheduler.start();
 
-        log.debug("Loaded {} process_element function(s)", interpreter.getLoadedNames().size());
+        log.debug("Loaded {} process_element function(s)", interpreter.getContexts().size());
     }
 
     @Override
@@ -115,7 +115,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
         // check for exception in scheduler
         scheduler.checkForFatalError();
 
-        for (String file : interpreter.getLoadedNames()) {
+        for (String file : interpreter.getContexts()) {
             try {
                 interpreter.execute(file, "process_element", line, out);
             } catch (Exception e) {

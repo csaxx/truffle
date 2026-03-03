@@ -95,45 +95,56 @@ input through both the canonical Java implementation (`ProcessFunctionJava`) and
 Python implementation (`ProcessFunctionPython` → `transform.py`) and asserts their
 outputs are identical row-by-row. This ensures Python parity with the Java reference.
 
-### GraalPyInterpreter
+### PolyglotInterpreter
 
-`GraalPyInterpreter` (`src/main/java/org/csa/truffle/graal/GraalPyInterpreter.java`)
-is a pure context manager — it manages the lifecycle of per-file GraalPy execution
-contexts. File loading and change tracking are handled separately by `FileLoader`.
-Construct it by passing a `Map<String, String>` of filename → Python source code.
+`PolyglotInterpreter` (`src/main/java/org/csa/truffle/interpreter/PolyglotInterpreter.java`)
+is a language-agnostic context manager — it manages the lifecycle of per-context polyglot
+execution contexts. File loading and change tracking are handled separately by `FileLoader`.
+Use the no-arg constructor and call `addContext` to load contexts.
 
-**`GraalPyContext`** (`src/main/java/org/csa/truffle/graal/GraalPyContext.java`) is a
-class that pairs a GraalPy `Context` with its filename and a `Map<String, Value>` member
-cache. `getMember(String memberName)` returns the cached `Value` for the named Python
-binding, or throws `NoSuchElementException` if the module does not define that name.
+**`PolyglotContext`** (`src/main/java/org/csa/truffle/interpreter/PolyglotContext.java`) is a
+class that pairs a GraalVM `Context` with its name, language, and a `Map<String, Value>` member
+cache. `getMember(String memberName)` returns the cached `Value` for the named binding,
+or throws `NoSuchElementException` if the context does not define that name.
 Results are cached on first access; a missing member triggers a polyglot lookup on each
 call (absent members are the exception, not the norm).
 
-**Per-file context isolation.** Each file gets its own `Context`. This prevents name
+**Per-context isolation.** Each loaded source gets its own `Context`. This prevents name
 collisions — two files can both define `process_element` without one overwriting the
-other. All contexts share a single static `Engine` (`SHARED_ENGINE`) so compiled ASTs
-are cached across contexts; the per-file overhead is only interpreter state.
+other. All contexts share a per-language static `Engine` (`SHARED_ENGINES`, a
+`ConcurrentHashMap<TruffleLanguage, Engine>`) so compiled ASTs are cached across contexts;
+the per-context overhead is only interpreter state.
 
 **Constructor.**
 ```java
-new GraalPyInterpreter(Map<String, String> fileContents)
+new PolyglotInterpreter()
 ```
-Iteration order of the map determines index order; pass a `LinkedHashMap` for
-deterministic ordering. Each entry is evaluated into its own GraalPy `Context`
-immediately at construction time.
+Call `addContext(TruffleLanguage, String, String)` to load each source. The name
+parameter serves as the unique key; pass names in the desired index order for
+deterministic `getContexts()` / `executeAll()` ordering.
 
 **API.**
-- `getLoadedFileNames()` — returns filenames in index order.
-- `getMember(filename, memberName)` — returns the cached `Value` for the named member
-  in the given file; throws `NoSuchElementException` if the file is not loaded or does
-  not define that member.
-- `getMembers(memberName)` — returns one `Value` per file that defines `memberName`,
-  in index order; files that do not define the member are omitted.
-- `execute(filename, memberName, args...)` — calls the named function in the given file;
-  no-op if the file or member is absent.
-- `executeAll(memberName, args...)` — calls the named function in every file that defines
-  it, in index order.
-- `close()` — closes all per-file `Context`s. Use try-with-resources.
+- `addContext(language, context, content)` — evaluates `content` into a new context keyed
+  by `context`; throws `IllegalArgumentException` if the key is already loaded.
+- `hasContext(context)` — returns `true` if the named context is loaded.
+- `getContexts()` — returns context names in index order.
+- `getContext(context)` — returns the `PolyglotContext`; throws `NoSuchElementException` if not loaded.
+- `hasMember(context, member)` — returns whether the named binding exists in the context.
+- `getMemberNames(context)` — returns all member names in the named context.
+- `getMember(context, member)` — returns the cached `Value`; throws `NoSuchElementException` if the
+  context is not loaded or does not define the member.
+- `getMembers(member)` — returns one `Value` per loaded context in index order; throws
+  `NoSuchElementException` if any context does not define the member.
+- `canExecute(context, member)` — returns whether the named member can be executed.
+- `execute(context, member, args...)` — executes the member and returns the result.
+- `executeVoid(context, member, args...)` — executes the member with no return value.
+- `executeAll(member, args...)` — executes the member on every context in index order and returns
+  results; throws `NoSuchElementException` if any context does not define the member.
+- `executeAllVoid(member, args...)` — same as `executeAll` without collecting return values.
+- `reset()` — closes all contexts and clears the map; the interpreter remains usable afterwards.
+- `close()` — delegates to `reset()`. Use try-with-resources.
+- `closeSharedEngines()` — closes and removes all per-language shared engines; call only at
+  JVM shutdown when no further polyglot contexts will be created.
 
 **Adding a new Python transform file.** Create the `.py` file under
 `src/main/resources/python/` with a `process_element(line, out)` function. No Java

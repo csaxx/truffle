@@ -7,10 +7,7 @@ import org.graalvm.polyglot.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.NoSuchElementException;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -27,7 +24,7 @@ public class PolyglotInterpreter implements AutoCloseable {
     /**
      * Per-language static engine cache — never closed; caches compiled ASTs across contexts.
      */
-    private static final ConcurrentHashMap<TruffleLanguage, Engine> ENGINES = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<TruffleLanguage, Engine> SHARED_ENGINES = new ConcurrentHashMap<>();
 
     /**
      * Maps name to context, in index order.
@@ -41,25 +38,25 @@ public class PolyglotInterpreter implements AutoCloseable {
     }
 
     /**
-     * Loads {@code content} as a polyglot source identified by {@code name}.
+     * Loads {@code content} as a polyglot source identified by {@code context}.
      *
      * @param language the language of the source
-     * @param name       unique identifier for this context (e.g. filename)
+     * @param context  unique identifier for this context (e.g. filename)
      * @param content  source code
-     * @throws IllegalArgumentException if a context with this name is already loaded
+     * @throws IllegalArgumentException if a context with this context is already loaded
      * @throws Exception                if the source fails to evaluate
      */
-    public void addContext(TruffleLanguage language, String name, String content) throws Exception {
+    public void addContext(TruffleLanguage language, String context, String content) throws Exception {
 
-        if (contexts.containsKey(name)) {
-            throw new IllegalArgumentException("Context already loaded: '" + name + "'");
+        if (contexts.containsKey(context)) {
+            throw new IllegalArgumentException("Context already loaded: '" + context + "'");
         }
 
         Context ctx = createContext(language);
-        ctx.eval(Source.newBuilder(language.getId(), content, name).build());
-        contexts.put(name, new PolyglotContext(language, name, ctx));
+        ctx.eval(Source.newBuilder(language.getId(), content, context).build());
+        contexts.put(context, new PolyglotContext(language, context, ctx));
 
-        log.debug("Loaded context '{}' ({})", name, language.getId());
+        log.debug("Loaded context '{}' ({})", context, language.getId());
     }
 
     /**
@@ -81,7 +78,7 @@ public class PolyglotInterpreter implements AutoCloseable {
 
     private Context createContext(TruffleLanguage language) {
 
-        Engine engine = ENGINES.computeIfAbsent(language, lang -> Engine.newBuilder(lang.getId()).build());
+        Engine engine = SHARED_ENGINES.computeIfAbsent(language, lang -> Engine.newBuilder(lang.getId()).build());
 
         return Context.newBuilder(language.getId())
                 .engine(engine)
@@ -89,67 +86,128 @@ public class PolyglotInterpreter implements AutoCloseable {
                 .build();
     }
 
+    public boolean hasContext(String context) {
+        return contexts.containsKey(context);
+    }
+
     /**
      * Returns the names of all loaded contexts, in index order.
      */
-    public List<String> getLoadedNames() {
+    public List<String> getContexts() {
         return List.copyOf(contexts.keySet());
     }
 
     /**
-     * Returns the cached {@link Value} for {@code memberName} in the named context.
+     * Returns the {@link PolyglotContext} for the context name.
+     *
+     * @throws NoSuchElementException if the context is not loaded.
+     */
+    public PolyglotContext getContext(String context) {
+
+        if (!hasContext(context)) {
+            throw new NoSuchElementException("Context '" + context + "' is not loaded");
+        }
+
+        return contexts.get(context);
+    }
+
+    /**
+     * Returns whether {@link PolyglotContext} for the context name has the {@code member}.
+     *
+     * @throws NoSuchElementException if the context is not loaded.
+     */
+    public boolean hasMember(String context, String member) throws NoSuchElementException {
+        return getContext(context).hasMember(member);
+    }
+
+    /**
+     * Returns all member names in the named context.
+     *
+     * @throws NoSuchElementException if the context is not loaded
+     */
+    public Set<String> getMemberNames(String context) throws NoSuchElementException {
+        return getContext(context).getMembers();
+    }
+
+    /**
+     * Returns the cached {@link Value} for {@code member} in the named context.
      *
      * @throws NoSuchElementException if the context is not loaded or does not define the member
      */
-    public Value getMember(String name, String memberName) {
-
-        PolyglotContext ctx = contexts.get(name);
-
-        if (ctx == null) {
-            throw new NoSuchElementException(
-                    "Context '" + name + "' is not loaded");
-        }
-
-        return ctx.getMember(memberName);
+    public Value getMember(String context, String member) throws NoSuchElementException {
+        return getContext(context).getMember(member);
     }
 
     /**
-     * Returns one {@link Value} per context that defines {@code memberName},
-     * in index order. Contexts that do not define the member are omitted.
+     * Returns one {@link Value} per context that defines {@code member}, in index order.
+     *
+     * @throws NoSuchElementException if the context is not loaded or does not define the member
      */
-    public List<Value> getMembers(String memberName) {
-        List<Value> result = new ArrayList<>();
+    public Map<String, Value> getMembers(String member) throws NoSuchElementException {
 
-        for (PolyglotContext fc : contexts.values()) {
-            try {
-                result.add(fc.getMember(memberName));
-            } catch (NoSuchElementException ignored) {
-            }
+        Map<String, Value> members = new LinkedHashMap<>();
+
+        for (Map.Entry<String, PolyglotContext> entry : contexts.entrySet()) {
+            Value m = getMember(entry.getKey(), member);
+            members.put(entry.getKey(), m);
         }
 
-        return List.copyOf(result);
+        return members;
     }
 
     /**
-     * Executes {@code memberName} on the given context with {@code args}.
-     * No-op if the context is not loaded or does not define the member.
+     * Returns whether {@code member} can be executed.
+     *
+     * @throws NoSuchElementException if the context is not loaded or does not define the member
      */
-    public void execute(String name, String memberName, Object... args) {
-        try {
-            getMember(name, memberName).execute(args);
-        } catch (NoSuchElementException ignored) {
-        }
+    public boolean canExecute(String context, String member) throws NoSuchElementException {
+        return getMember(context, member).canExecute();
     }
 
     /**
-     * Executes {@code memberName} on every loaded context that defines it, in index order.
+     * Executes {@code member} on the given context with {@code args}.
+     *
+     * @throws NoSuchElementException if the context is not loaded or does not define the member
      */
-    public void executeAll(String memberName, Object... args) {
-        for (PolyglotContext fc : contexts.values()) {
-            try {
-                fc.getMember(memberName).execute(args);
-            } catch (NoSuchElementException ignored) {
-            }
+    public Value execute(String context, String member, Object... args) throws NoSuchElementException {
+        return getMember(context, member).execute(args);
+    }
+
+    /**
+     * Executes {@code member} on the given context with {@code args}.
+     *
+     * @throws NoSuchElementException if the context is not loaded or does not define the member
+     */
+    public void executeVoid(String context, String member, Object... args) throws NoSuchElementException {
+        getMember(context, member).executeVoid(args);
+    }
+
+    /**
+     * Executes {@code member} on every loaded context that defines it, in index order.
+     *
+     * @throws NoSuchElementException if the context is not loaded or does not define the member
+     */
+    public Map<String, Value> executeAll(String member, Object... args) throws NoSuchElementException {
+
+        Map<String, Value> results = new LinkedHashMap<>();
+
+        for (Map.Entry<String, PolyglotContext> entry : contexts.entrySet()) {
+
+            Value result = entry.getValue().getMember(member).execute(args);
+            results.put(entry.getKey(), result);
+        }
+
+        return results;
+    }
+
+    /**
+     * Executes {@code member} on every loaded context that defines it, in index order.
+     *
+     * @throws NoSuchElementException if the context is not loaded or does not define the member
+     */
+    public void executeAllVoid(String member, Object... args) throws NoSuchElementException {
+        for (PolyglotContext context : contexts.values()) {
+            context.getMember(member).executeVoid(args);
         }
     }
 
@@ -157,4 +215,10 @@ public class PolyglotInterpreter implements AutoCloseable {
     public void close() {
         reset();
     }
+
+    public void closeSharedEngines() {
+        SHARED_ENGINES.values().forEach(Engine::close);
+        SHARED_ENGINES.clear();
+    }
+
 }

@@ -6,6 +6,7 @@ import org.graalvm.polyglot.Value;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 
 public class PolyglotContext {
 
@@ -32,18 +33,34 @@ public class PolyglotContext {
         return language;
     }
 
+    public Set<String> getMembers() {
+        return context.getBindings(language.getId()).getMemberKeys();
+    }
+
+    public boolean hasMember(String memberName) {
+        return memberCache.containsKey(memberName) || context.getBindings(language.getId()).hasMember(memberName);
+    }
+
     /**
      * Returns the cached {@link Value} for {@code memberName}.
      *
      * @throws NoSuchElementException if the module does not define that name
      */
     public Value getMember(String memberName) {
+
         Value cached = memberCache.get(memberName);
-        if (cached != null) return cached;
+        if (cached != null) {
+            return cached;
+        }
+
         Value member = context.getBindings(language.getId()).getMember(memberName);
-        if (member == null) throw new NoSuchElementException(
-                "Member '" + memberName + "' not defined in '" + name + "'");
+        if (member == null) {
+            throw new NoSuchElementException(
+                    "Member '" + memberName + "' not defined in '" + name + "'");
+        }
+
         memberCache.put(memberName, member);
+
         return member;
     }
 }
