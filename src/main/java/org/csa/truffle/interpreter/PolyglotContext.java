@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 
-public class PolyglotContext {
+public class PolyglotContext implements AutoCloseable {
 
     private final Context context;
     private final String name;
@@ -38,7 +38,13 @@ public class PolyglotContext {
     }
 
     public boolean hasMember(String memberName) {
-        return memberCache.containsKey(memberName) || context.getBindings(language.getId()).hasMember(memberName);
+        if (memberCache.containsKey(memberName)) return true;
+        Value v = context.getBindings(language.getId()).getMember(memberName);
+        if (v != null) {
+            memberCache.put(memberName, v);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -62,5 +68,11 @@ public class PolyglotContext {
         memberCache.put(memberName, member);
 
         return member;
+    }
+
+    @Override
+    public void close() {
+        memberCache.clear();
+        context.close();
     }
 }

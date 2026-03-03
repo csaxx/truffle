@@ -104,10 +104,11 @@ Use the no-arg constructor and call `addContext` to load contexts.
 
 **`PolyglotContext`** (`src/main/java/org/csa/truffle/interpreter/PolyglotContext.java`) is a
 class that pairs a GraalVM `Context` with its name, language, and a `Map<String, Value>` member
-cache. `getMember(String memberName)` returns the cached `Value` for the named binding,
+cache. Implements `AutoCloseable`; `close()` clears the cache and delegates to `context.close()`.
+`getMember(String memberName)` returns the cached `Value` for the named binding,
 or throws `NoSuchElementException` if the context does not define that name.
-Results are cached on first access; a missing member triggers a polyglot lookup on each
-call (absent members are the exception, not the norm).
+Results are cached on first access; `hasMember()` also primes the cache on a hit, so a
+subsequent `getMember()` call for the same name avoids a second polyglot lookup.
 
 **Per-context isolation.** Each loaded source gets its own `Context`. This prevents name
 collisions — two files can both define `process_element` without one overwriting the
@@ -141,6 +142,9 @@ deterministic `getContexts()` / `executeAll()` ordering.
 - `executeAll(member, args...)` — executes the member on every context in index order and returns
   results; throws `NoSuchElementException` if any context does not define the member.
 - `executeAllVoid(member, args...)` — same as `executeAll` without collecting return values.
+- `executeAllPresent(member, args...)` — executes the member on every context that defines it,
+  skipping those that do not; returns results in index order.
+- `executeAllVoidPresent(member, args...)` — same as `executeAllPresent` without collecting return values.
 - `reset()` — closes all contexts and clears the map; the interpreter remains usable afterwards.
 - `close()` — delegates to `reset()`. Use try-with-resources.
 - `closeSharedEngines()` — closes and removes all per-language shared engines; call only at

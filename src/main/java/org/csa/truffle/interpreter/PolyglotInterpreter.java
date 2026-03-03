@@ -73,7 +73,7 @@ public class PolyglotInterpreter implements AutoCloseable {
 
         contexts.values().forEach(fc -> {
             try {
-                fc.context().close();
+                fc.close();
             } catch (Exception ignored) {
             }
         });
@@ -87,7 +87,7 @@ public class PolyglotInterpreter implements AutoCloseable {
 
         return Context.newBuilder(language.getId())
                 .engine(engine)
-                .allowAllAccess(true)
+                .allowAllAccess(true)   // scripts are trusted internal transforms; full host access is intentional
                 .build();
     }
 
@@ -198,7 +198,7 @@ public class PolyglotInterpreter implements AutoCloseable {
 
         for (Map.Entry<String, PolyglotContext> entry : contexts.entrySet()) {
 
-            Value result = entry.getValue().getMember(member).execute(args);
+            Value result = getMember(entry.getKey(), member).execute(args);
             results.put(entry.getKey(), result);
         }
 
@@ -211,8 +211,33 @@ public class PolyglotInterpreter implements AutoCloseable {
      * @throws NoSuchElementException if the context is not loaded or does not define the member
      */
     public void executeAllVoid(String member, Object... args) throws NoSuchElementException {
-        for (PolyglotContext context : contexts.values()) {
-            context.getMember(member).executeVoid(args);
+        for (Map.Entry<String, PolyglotContext> entry : contexts.entrySet()) {
+            getMember(entry.getKey(), member).executeVoid(args);
+        }
+    }
+
+    /**
+     * Executes {@code member} on every loaded context that defines it, skipping those that do not.
+     * Returns results in index order (only from contexts where the member was present).
+     */
+    public Map<String, Value> executeAllPresent(String member, Object... args) {
+        Map<String, Value> results = new LinkedHashMap<>();
+        for (Map.Entry<String, PolyglotContext> entry : contexts.entrySet()) {
+            if (entry.getValue().hasMember(member)) {
+                results.put(entry.getKey(), getMember(entry.getKey(), member).execute(args));
+            }
+        }
+        return results;
+    }
+
+    /**
+     * Executes {@code member} on every loaded context that defines it, skipping those that do not.
+     */
+    public void executeAllVoidPresent(String member, Object... args) {
+        for (Map.Entry<String, PolyglotContext> entry : contexts.entrySet()) {
+            if (entry.getValue().hasMember(member)) {
+                getMember(entry.getKey(), member).executeVoid(args);
+            }
         }
     }
 
