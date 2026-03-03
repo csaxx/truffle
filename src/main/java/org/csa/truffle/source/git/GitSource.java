@@ -25,9 +25,10 @@ import java.util.*;
  * forge's tree API — no clone required. Supports GitHub, GitLab, and Gitea /
  * Forgejo. File contents are fetched one at a time via raw-content HTTP URLs.
  *
- * <p>Files under any {@code venv/} subtree are excluded. Each of the {@code filemasks}
- * globs is matched against the filename; a file matches if it matches any pattern.
- * Pass {@code null} or empty array to include all files.
+ * <p>Each of the {@code filemasks} globs is matched against the filename; a file matches
+ * if it matches any pattern. Pass {@code null} or empty array to include all files.
+ * Each of the {@code excludeFilemasks} globs is matched against each path component;
+ * a file is excluded if any pattern matches any component.
  * Discovered paths are sorted alphabetically.
  *
  * <p><b>GitHub example:</b>
@@ -56,20 +57,22 @@ public class GitSource implements FileSource {
     private static final Logger log = LoggerFactory.getLogger(GitSource.class);
 
     private final HttpClient http;
-    private final String rawBaseUrl;   // {provider-raw-prefix}/{branch}
-    private final String apiBaseUrl;   // forge-specific REST API root
+    private final String rawBaseUrl;        // {provider-raw-prefix}/{branch}
+    private final String apiBaseUrl;        // forge-specific REST API root
     private final String directory;
     private final String branch;
     private final GitForgeType gitForgeType;
-    private final String token;        // nullable
-    private final String[] filemasks;  // nullable
+    private final String token;             // nullable
+    private final String[] filemasks;       // nullable
+    private final String[] excludeFilemasks; // nullable
 
     /**
      * Creates a {@code GitSource} with an explicit forge type.
      */
     public GitSource(String repoUrl, String directory, String branch,
-                     String token, GitForgeType gitForgeType, String[] filemasks) {
-        this(repoUrl, directory, branch, token, gitForgeType, filemasks,
+                     String token, GitForgeType gitForgeType, String[] filemasks,
+                     String[] excludeFilemasks) {
+        this(repoUrl, directory, branch, token, gitForgeType, filemasks, excludeFilemasks,
                 buildApiBase(repoUrl, branch, gitForgeType));
     }
 
@@ -79,10 +82,11 @@ public class GitSource implements FileSource {
      */
     public GitSource(String repoUrl, String directory, String branch,
                      String token, GitForgeType gitForgeType, String[] filemasks,
-                     String apiBaseUrl) {
+                     String[] excludeFilemasks, String apiBaseUrl) {
         this.directory = directory;
         this.token = token;
         this.filemasks = filemasks;
+        this.excludeFilemasks = excludeFilemasks;
         this.branch = branch;
         this.gitForgeType = gitForgeType;
         this.rawBaseUrl = buildRawBase(repoUrl, branch, gitForgeType);
@@ -94,11 +98,19 @@ public class GitSource implements FileSource {
     }
 
     /**
-     * Creates a {@code GitSource} with an explicit forge type (no filemasks).
+     * Creates a {@code GitSource} with an explicit forge type (no filemasks, no excludeFilemasks).
      */
     public GitSource(String repoUrl, String directory, String branch,
                      String token, GitForgeType gitForgeType) {
-        this(repoUrl, directory, branch, token, gitForgeType, null);
+        this(repoUrl, directory, branch, token, gitForgeType, null, null);
+    }
+
+    /**
+     * Creates a {@code GitSource} with an explicit forge type and filemasks (no excludeFilemasks).
+     */
+    public GitSource(String repoUrl, String directory, String branch,
+                     String token, GitForgeType gitForgeType, String[] filemasks) {
+        this(repoUrl, directory, branch, token, gitForgeType, filemasks, null);
     }
 
     /**
@@ -166,10 +178,11 @@ public class GitSource implements FileSource {
     @Override
     public Map<String, Optional<Instant>> listFiles() throws IOException {
         PathMatcher[] matchers = buildMatchers(filemasks);
+        PathMatcher[] excludeMatchers = buildMatchers(excludeFilemasks);
         List<String> paths = switch (gitForgeType) {
-            case GITHUB -> listFilesGitHub(matchers);
-            case GITLAB -> listFilesGitLab(matchers);
-            case GITEA -> listFilesGitea(matchers);
+            case GITHUB -> listFilesGitHub(matchers, excludeMatchers);
+            case GITLAB -> listFilesGitLab(matchers, excludeMatchers);
+            case GITEA -> listFilesGitea(matchers, excludeMatchers);
         };
         LinkedHashMap<String, Optional<Instant>> result = new LinkedHashMap<>();
         for (String p : paths) {
@@ -178,31 +191,32 @@ public class GitSource implements FileSource {
         return result;
     }
 
-    private List<String> listFilesGitHub(PathMatcher[] matchers) throws IOException {
+    private List<String> listFilesGitHub(PathMatcher[] matchers, PathMatcher[] excludeMatchers) throws IOException {
         String url = apiBaseUrl + "/git/trees/" + branch + "?recursive=1";
         String json = fetchApi(url);
-        return parseGitHubTree(json, matchers);
+        return parseGitHubTree(json, matchers, excludeMatchers);
     }
 
-    private List<String> listFilesGitLab(PathMatcher[] matchers) throws IOException {
+    private List<String> listFilesGitLab(PathMatcher[] matchers, PathMatcher[] excludeMatchers) throws IOException {
         String encodedDir = URLEncoder.encode(directory, StandardCharsets.UTF_8);
         String url = apiBaseUrl + "/repository/tree?path=" + encodedDir
                 + "&recursive=true&ref=" + branch + "&per_page=100";
         String json = fetchApi(url);
-        return parseGitLabTree(json, matchers);
+        return parseGitLabTree(json, matchers, excludeMatchers);
     }
 
-    private List<String> listFilesGitea(PathMatcher[] matchers) throws IOException {
+    private List<String> listFilesGitea(PathMatcher[] matchers, PathMatcher[] excludeMatchers) throws IOException {
         String url = apiBaseUrl + "/git/trees/" + branch + "?recursive=true";
         String json = fetchApi(url);
-        return parseGitHubTree(json, matchers); // same JSON structure as GitHub
+        return parseGitHubTree(json, matchers, excludeMatchers); // same JSON structure as GitHub
     }
 
     /**
      * Parses a GitHub/Gitea tree API response.
      * Expected: {@code { "tree": [ { "path": "...", "type": "blob"|"tree" } ], "truncated": bool }}
      */
-    private List<String> parseGitHubTree(String json, PathMatcher[] matchers) throws IOException {
+    private List<String> parseGitHubTree(String json, PathMatcher[] matchers,
+                                          PathMatcher[] excludeMatchers) throws IOException {
         JsonNode root = new ObjectMapper().readTree(json);
         if (root.path("truncated").asBoolean(false)) {
             log.warn("GitHub/Gitea tree response is truncated; some files under '{}' may be missing",
@@ -217,7 +231,7 @@ public class GitSource implements FileSource {
             if (!dirPrefix.isEmpty() && !p.startsWith(dirPrefix)) continue;
             String rel = dirPrefix.isEmpty() ? p : p.substring(dirPrefix.length());
             if (rel.isEmpty()) continue;
-            if (isVenvPath(Path.of(rel))) continue;
+            if (matchesAnyExclude(rel, excludeMatchers)) continue;
             if (!matchesMasks(rel, matchers)) continue;
             paths.add(rel);
         }
@@ -231,7 +245,8 @@ public class GitSource implements FileSource {
      * Paths in the response are relative to the repo root, so the {@code directory}
      * prefix is stripped.
      */
-    private List<String> parseGitLabTree(String json, PathMatcher[] matchers) throws IOException {
+    private List<String> parseGitLabTree(String json, PathMatcher[] matchers,
+                                          PathMatcher[] excludeMatchers) throws IOException {
         JsonNode root = new ObjectMapper().readTree(json);
         String dirPrefix = directory.isEmpty() ? "" : directory + "/";
         List<String> paths = new ArrayList<>();
@@ -241,7 +256,7 @@ public class GitSource implements FileSource {
             if (!dirPrefix.isEmpty() && !p.startsWith(dirPrefix)) continue;
             String rel = dirPrefix.isEmpty() ? p : p.substring(dirPrefix.length());
             if (rel.isEmpty()) continue;
-            if (isVenvPath(Path.of(rel))) continue;
+            if (matchesAnyExclude(rel, excludeMatchers)) continue;
             if (!matchesMasks(rel, matchers)) continue;
             paths.add(rel);
         }
@@ -299,13 +314,6 @@ public class GitSource implements FileSource {
     // Shared helpers
     // -------------------------------------------------------------------------
 
-    static boolean isVenvPath(Path relativePath) {
-        for (Path component : relativePath) {
-            if ("venv".equals(component.toString())) return true;
-        }
-        return false;
-    }
-
     static PathMatcher[] buildMatchers(String[] filemasks) {
         if (filemasks == null || filemasks.length == 0) return null;
         PathMatcher[] matchers = new PathMatcher[filemasks.length];
@@ -321,6 +329,19 @@ public class GitSource implements FileSource {
         if (filename == null) return false;
         for (PathMatcher matcher : matchers) {
             if (matcher.matches(filename)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Returns {@code true} if any exclude pattern matches any component of {@code relativePath}.
+     */
+    static boolean matchesAnyExclude(String relativePath, PathMatcher[] excludeMatchers) {
+        if (excludeMatchers == null) return false;
+        for (Path component : Path.of(relativePath)) {
+            for (PathMatcher matcher : excludeMatchers) {
+                if (matcher.matches(component)) return true;
+            }
         }
         return false;
     }

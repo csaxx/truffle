@@ -57,10 +57,20 @@ class FileSystemSourceTest {
     void listFiles_skipsVenvDirectory() throws IOException {
         writePy("keep.py", "");
         writePy("venv/site-packages/lib.py", "");
-        FileSystemSource src = new FileSystemSource(tempDir, false);
+        FileSystemSource src = new FileSystemSource(tempDir, false, null, new String[]{"venv"});
         Map<String, Optional<Instant>> files = src.listFiles();
         assertTrue(files.containsKey("keep.py"));
         assertFalse(files.keySet().stream().anyMatch(k -> k.contains("venv")));
+    }
+
+    @Test
+    void listFiles_excludeFilemaskExcludesSpecificFile() throws IOException {
+        writePy("keep.py", "");
+        writePy("excluded.py", "");
+        FileSystemSource src = new FileSystemSource(tempDir, false, null, new String[]{"excluded.py"});
+        Map<String, Optional<Instant>> files = src.listFiles();
+        assertTrue(files.containsKey("keep.py"));
+        assertFalse(files.containsKey("excluded.py"));
     }
 
     @Test

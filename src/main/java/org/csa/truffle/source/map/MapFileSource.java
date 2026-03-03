@@ -27,14 +27,20 @@ public class MapFileSource implements FileSource {
 
     private final ConcurrentHashMap<String, Entry> map = new ConcurrentHashMap<>();
     private final String[] filemasks;
+    private final String[] excludeFilemasks;
     private volatile Runnable changeListener;
 
-    public MapFileSource(String[] filemasks) {
+    public MapFileSource(String[] filemasks, String[] excludeFilemasks) {
         this.filemasks = filemasks;
+        this.excludeFilemasks = excludeFilemasks;
+    }
+
+    public MapFileSource(String[] filemasks) {
+        this(filemasks, null);
     }
 
     public MapFileSource() {
-        this(null);
+        this(null, null);
     }
 
     /**
@@ -65,14 +71,17 @@ public class MapFileSource implements FileSource {
     @Override
     public Map<String, Optional<Instant>> listFiles() {
         PathMatcher[] matchers = buildMatchers(filemasks);
+        PathMatcher[] excludeMatchers = buildMatchers(excludeFilemasks);
         // snapshot to avoid ConcurrentModificationException
         List<Map.Entry<String, Entry>> snapshot = new ArrayList<>(map.entrySet());
         snapshot.sort(Map.Entry.comparingByKey());
 
         LinkedHashMap<String, Optional<Instant>> result = new LinkedHashMap<>();
         for (Map.Entry<String, Entry> e : snapshot) {
-            if (matchesMasks(e.getKey(), matchers)) {
-                result.put(e.getKey(), Optional.of(e.getValue().modifiedAt()));
+            String name = e.getKey();
+            if (matchesAnyExclude(name, excludeMatchers)) continue;
+            if (matchesMasks(name, matchers)) {
+                result.put(name, Optional.of(e.getValue().modifiedAt()));
             }
         }
         return result;
@@ -109,6 +118,19 @@ public class MapFileSource implements FileSource {
         if (filename == null) return false;
         for (PathMatcher matcher : matchers) {
             if (matcher.matches(filename)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Returns {@code true} if any exclude pattern matches any component of {@code relativePath}.
+     */
+    static boolean matchesAnyExclude(String relativePath, PathMatcher[] excludeMatchers) {
+        if (excludeMatchers == null) return false;
+        for (Path component : Path.of(relativePath)) {
+            for (PathMatcher matcher : excludeMatchers) {
+                if (matcher.matches(component)) return true;
+            }
         }
         return false;
     }

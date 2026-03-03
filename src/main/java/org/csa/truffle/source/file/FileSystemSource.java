@@ -19,9 +19,10 @@ import java.util.stream.Stream;
  * {@link FileSource} that auto-discovers files by walking a local directory and
  * watches it recursively for changes via {@link WatchService}.
  *
- * <p>Files under any {@code venv/} subtree are excluded. Each of the {@code filemasks}
- * globs is matched against the filename (last path component); a file matches if it
- * matches any pattern. Pass {@code null} or an empty array to include all files.
+ * <p>Files matching any {@code excludeFilemasks} pattern (matched against each path component)
+ * are excluded. Each of the {@code filemasks} globs is matched against the filename (last path
+ * component); a file matches if it matches any pattern. Pass {@code null} or an empty array to
+ * include all files.
  */
 public class FileSystemSource implements FileSource {
 
@@ -31,37 +32,43 @@ public class FileSystemSource implements FileSource {
     private final Path directory;
     private final boolean watch;
     private final String[] filemasks;
+    private final String[] excludeFilemasks;
     private volatile Runnable changeListener;
     private WatchService watchService;
     private Thread watcherThread;
     private final Map<WatchKey, Path> watchedDirs = new ConcurrentHashMap<>();
 
-    public FileSystemSource(Path directory, boolean watch, String[] filemasks) {
+    public FileSystemSource(Path directory, boolean watch, String[] filemasks, String[] excludeFilemasks) {
         this.directory = directory;
         this.watch = watch;
         this.filemasks = filemasks;
+        this.excludeFilemasks = excludeFilemasks;
+    }
+
+    public FileSystemSource(Path directory, boolean watch, String[] filemasks) {
+        this(directory, watch, filemasks, null);
     }
 
     public FileSystemSource(Path directory, boolean watch) {
-        this(directory, watch, null);
+        this(directory, watch, null, null);
     }
 
     @Override
     public Map<String, Optional<Instant>> listFiles() throws IOException {
         PathMatcher[] matchers = buildMatchers(filemasks);
+        PathMatcher[] excludeMatchers = buildMatchers(excludeFilemasks);
         LinkedHashMap<String, Optional<Instant>> result = new LinkedHashMap<>();
         try (Stream<Path> walk = Files.walk(directory)) {
             walk
                     .filter(Files::isRegularFile)
-                    .filter(p -> !isVenvPath(directory.relativize(p)))
-                    .filter(p -> matchesMasks(directory.relativize(p).toString().replace('\\', '/'), matchers))
-                    .sorted(Comparator.comparing(
-                            p -> directory.relativize(p).toString().replace('\\', '/')))
-                    .forEach(file -> {
-                        String rel = directory.relativize(file).toString().replace('\\', '/');
+                    .map(p -> directory.relativize(p).toString().replace('\\', '/'))
+                    .filter(rel -> !matchesAnyExclude(rel, excludeMatchers))
+                    .filter(rel -> matchesMasks(rel, matchers))
+                    .sorted(Comparator.naturalOrder())
+                    .forEach(rel -> {
                         Instant mtime;
                         try {
-                            mtime = Files.getLastModifiedTime(file).toInstant();
+                            mtime = Files.getLastModifiedTime(directory.resolve(rel)).toInstant();
                         } catch (IOException e) {
                             mtime = null;
                         }
@@ -188,13 +195,6 @@ public class FileSystemSource implements FileSource {
     // Shared helpers (duplicated from ResourceSource for package isolation)
     // -------------------------------------------------------------------------
 
-    static boolean isVenvPath(Path relativePath) {
-        for (Path component : relativePath) {
-            if ("venv".equals(component.toString())) return true;
-        }
-        return false;
-    }
-
     static PathMatcher[] buildMatchers(String[] filemasks) {
         if (filemasks == null || filemasks.length == 0) return null;
         PathMatcher[] matchers = new PathMatcher[filemasks.length];
@@ -210,6 +210,19 @@ public class FileSystemSource implements FileSource {
         if (filename == null) return false;
         for (PathMatcher matcher : matchers) {
             if (matcher.matches(filename)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Returns {@code true} if any exclude pattern matches any component of {@code relativePath}.
+     */
+    static boolean matchesAnyExclude(String relativePath, PathMatcher[] excludeMatchers) {
+        if (excludeMatchers == null) return false;
+        for (Path component : Path.of(relativePath)) {
+            for (PathMatcher matcher : excludeMatchers) {
+                if (matcher.matches(component)) return true;
+            }
         }
         return false;
     }

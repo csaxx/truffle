@@ -21,20 +21,27 @@ import java.util.stream.Stream;
 /**
  * {@link FileSource} that auto-discovers files from a classpath directory.
  * All regular files under {@code directory} are returned in alphabetical order,
- * with {@code venv/} subtrees and files that do not match any of {@code filemasks} excluded.
+ * with files matching any {@code excludeFilemasks} pattern (matched against each path component)
+ * excluded, and files that do not match any of {@code filemasks} excluded.
  */
 public class ResourceSource implements FileSource {
 
     private final String directory;
     private final String[] filemasks;
+    private final String[] excludeFilemasks;
 
-    public ResourceSource(String directory, String[] filemasks) {
+    public ResourceSource(String directory, String[] filemasks, String[] excludeFilemasks) {
         this.directory = directory;
         this.filemasks = filemasks;
+        this.excludeFilemasks = excludeFilemasks;
+    }
+
+    public ResourceSource(String directory, String[] filemasks) {
+        this(directory, filemasks, null);
     }
 
     public ResourceSource(String directory) {
-        this(directory, null);
+        this(directory, null, null);
     }
 
     @Override
@@ -42,6 +49,7 @@ public class ResourceSource implements FileSource {
         URL dirUrl = getClass().getClassLoader().getResource(directory);
         if (dirUrl == null) throw new IOException("Classpath directory not found: " + directory);
         PathMatcher[] matchers = buildMatchers(filemasks);
+        PathMatcher[] excludeMatchers = buildMatchers(excludeFilemasks);
 
         List<String> names;
         String protocol = dirUrl.getProtocol();
@@ -56,9 +64,9 @@ public class ResourceSource implements FileSource {
             try (Stream<Path> walk = Files.walk(dirPath)) {
                 names = walk
                         .filter(Files::isRegularFile)
-                        .filter(p -> !isVenvPath(dirPath.relativize(p)))
-                        .filter(p -> matchesMasks(dirPath.relativize(p).toString().replace('\\', '/'), matchers))
                         .map(p -> dirPath.relativize(p).toString().replace('\\', '/'))
+                        .filter(rel -> !matchesAnyExclude(rel, excludeMatchers))
+                        .filter(rel -> matchesMasks(rel, matchers))
                         .sorted()
                         .toList();
             }
@@ -75,7 +83,7 @@ public class ResourceSource implements FileSource {
                         .filter(e -> fp.isEmpty() || e.getName().startsWith(fp))
                         .map(e -> fp.isEmpty() ? e.getName() : e.getName().substring(fp.length()))
                         .filter(rel -> !rel.isEmpty())
-                        .filter(rel -> !isVenvPath(Path.of(rel)))
+                        .filter(rel -> !matchesAnyExclude(rel, excludeMatchers))
                         .filter(rel -> matchesMasks(rel, matchers))
                         .sorted()
                         .collect(java.util.stream.Collectors.toList());
@@ -108,13 +116,6 @@ public class ResourceSource implements FileSource {
     // Shared helpers
     // -------------------------------------------------------------------------
 
-    static boolean isVenvPath(Path relativePath) {
-        for (Path component : relativePath) {
-            if ("venv".equals(component.toString())) return true;
-        }
-        return false;
-    }
-
     static PathMatcher[] buildMatchers(String[] filemasks) {
         if (filemasks == null || filemasks.length == 0) return null;
         PathMatcher[] matchers = new PathMatcher[filemasks.length];
@@ -130,6 +131,21 @@ public class ResourceSource implements FileSource {
         if (filename == null) return false;
         for (PathMatcher matcher : matchers) {
             if (matcher.matches(filename)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Returns {@code true} if any exclude pattern matches any component of {@code relativePath}.
+     * This allows patterns like {@code "venv"} to exclude entire subtrees, and patterns like
+     * {@code "flink_types.py"} to exclude a specific filename at any depth.
+     */
+    static boolean matchesAnyExclude(String relativePath, PathMatcher[] excludeMatchers) {
+        if (excludeMatchers == null) return false;
+        for (Path component : Path.of(relativePath)) {
+            for (PathMatcher matcher : excludeMatchers) {
+                if (matcher.matches(component)) return true;
+            }
         }
         return false;
     }

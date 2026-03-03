@@ -22,19 +22,20 @@ public final class FileSourceFactory {
 
         return switch (config) {
             case ResourceSourceConfig c ->
-                    new ResourceSource(c.directory(), c.filemasks());
+                    new ResourceSource(c.directory(), c.filemasks(), c.excludeFilemasks());
 
             case GitSourceConfig c -> c.forge() != null
-                    ? new GitSource(c.repoUrl(), c.directory(), c.branch(), c.token(), c.forge(), c.filemasks())
+                    ? new GitSource(c.repoUrl(), c.directory(), c.branch(), c.token(), c.forge(),
+                            c.filemasks(), c.excludeFilemasks())
                     : new GitSource(c.repoUrl(), c.directory(), c.branch(), c.token(),
-                            GitSource.detectForge(c.repoUrl()), c.filemasks());
+                            GitSource.detectForge(c.repoUrl()), c.filemasks(), c.excludeFilemasks());
 
             case FileSystemSourceConfig c ->
-                    new FileSystemSource(Path.of(c.directory()), c.watch(), c.filemasks());
+                    new FileSystemSource(Path.of(c.directory()), c.watch(), c.filemasks(), c.excludeFilemasks());
 
             case S3SourceConfig c -> new S3Source(c);
 
-            case MapFileSourceConfig c -> new MapFileSource(c.filemasks());
+            case MapFileSourceConfig c -> new MapFileSource(c.filemasks(), c.excludeFilemasks());
 
             default -> throw new IllegalArgumentException(
                     "Unknown SourceConfig type: " + config.getClass().getName());

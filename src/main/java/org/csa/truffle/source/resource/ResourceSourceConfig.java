@@ -2,9 +2,14 @@ package org.csa.truffle.source.resource;
 
 import org.csa.truffle.source.FileSourceConfig;
 
-public record ResourceSourceConfig(String directory, String[] filemasks) implements FileSourceConfig {
+public record ResourceSourceConfig(String directory, String[] filemasks, String[] excludeFilemasks)
+        implements FileSourceConfig {
 
     public ResourceSourceConfig(String directory) {
-        this(directory, null);
+        this(directory, null, null);
+    }
+
+    public ResourceSourceConfig(String directory, String[] filemasks) {
+        this(directory, filemasks, null);
     }
 }

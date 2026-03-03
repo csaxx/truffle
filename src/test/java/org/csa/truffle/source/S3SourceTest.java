@@ -152,7 +152,7 @@ class S3SourceTest {
         S3Client s3 = mock(S3Client.class);
         stubList(s3, s3obj("scripts/venv/lib.py"), s3obj("scripts/keep.py"));
 
-        S3Source src = new S3Source(s3, BUCKET, "scripts");
+        S3Source src = new S3Source(s3, BUCKET, "scripts", null, new String[]{"venv"});
         Map<String, Optional<Instant>> files = src.listFiles();
 
         assertFalse(files.keySet().stream().anyMatch(k -> k.contains("venv")));

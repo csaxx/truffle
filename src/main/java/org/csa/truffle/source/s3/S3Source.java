@@ -28,8 +28,9 @@ import java.util.TreeMap;
  * {@link FileSource} that auto-discovers files from an S3-compatible object store
  * by listing objects under the configured prefix. Works with AWS S3 and MinIO.
  *
- * <p>Objects whose key ends with {@code /}, objects under any {@code venv/} subtree,
- * and objects whose filename does not match any of {@code filemasks} are excluded.
+ * <p>Objects whose key ends with {@code /}, objects matching any {@code excludeFilemasks}
+ * pattern (matched against each path component), and objects whose filename does not match
+ * any of {@code filemasks} are excluded.
  * Results are sorted alphabetically by relative key.
  *
  * <p><b>AWS example:</b>
@@ -49,8 +50,9 @@ public class S3Source implements FileSource {
     private final S3Client s3;
     private final boolean ownsClient; // true when this instance built the client
     private final String bucket;
-    private final String prefix;    // never ends with '/', may be empty
-    private final String[] filemasks; // nullable
+    private final String prefix;         // never ends with '/', may be empty
+    private final String[] filemasks;    // nullable
+    private final String[] excludeFilemasks; // nullable
 
     /**
      * Constructs an {@code S3Source} from a {@link S3SourceConfig}, building and
@@ -64,23 +66,30 @@ public class S3Source implements FileSource {
      * Call {@link #close()} (or use try-with-resources) to release the client.
      */
     public S3Source(S3SourceConfig config) {
-        this(buildClient(config), true, config.bucket(), config.prefix(), config.filemasks());
+        this(buildClient(config), true, config.bucket(), config.prefix(),
+                config.filemasks(), config.excludeFilemasks());
+    }
+
+    public S3Source(S3Client s3, String bucket, String prefix, String[] filemasks, String[] excludeFilemasks) {
+        this(s3, false, bucket, prefix, filemasks, excludeFilemasks);
     }
 
     public S3Source(S3Client s3, String bucket, String prefix, String[] filemasks) {
-        this(s3, false, bucket, prefix, filemasks);
+        this(s3, false, bucket, prefix, filemasks, null);
     }
 
     public S3Source(S3Client s3, String bucket, String prefix) {
-        this(s3, false, bucket, prefix, null);
+        this(s3, false, bucket, prefix, null, null);
     }
 
-    private S3Source(S3Client s3, boolean ownsClient, String bucket, String prefix, String[] filemasks) {
+    private S3Source(S3Client s3, boolean ownsClient, String bucket, String prefix,
+                     String[] filemasks, String[] excludeFilemasks) {
         this.s3 = s3;
         this.ownsClient = ownsClient;
         this.bucket = bucket;
         this.prefix = StringUtils.stripEnd(prefix, "/");
         this.filemasks = filemasks;
+        this.excludeFilemasks = excludeFilemasks;
         log.info("Initialized: bucket={}, prefix={}, filemasks={}",
                 bucket, this.prefix.isEmpty() ? "(root)" : this.prefix,
                 filemasks != null ? java.util.Arrays.toString(filemasks) : "null");
@@ -101,6 +110,7 @@ public class S3Source implements FileSource {
     @Override
     public Map<String, Optional<Instant>> listFiles() throws IOException {
         PathMatcher[] matchers = buildMatchers(filemasks);
+        PathMatcher[] excludeMatchers = buildMatchers(excludeFilemasks);
         String searchPrefix = prefix.isEmpty() ? "" : prefix + "/";
 
         TreeMap<String, Optional<Instant>> sorted = new TreeMap<>();
@@ -112,7 +122,7 @@ public class S3Source implements FileSource {
                     if (obj.key().endsWith("/")) continue; // skip directory markers
                     String rel = obj.key().substring(searchPrefix.length());
                     if (rel.isEmpty()) continue;
-                    if (isVenvPath(Path.of(rel))) continue;
+                    if (matchesAnyExclude(rel, excludeMatchers)) continue;
                     if (!matchesMasks(rel, matchers)) continue;
                     sorted.put(rel, Optional.ofNullable(obj.lastModified()));
                 }
@@ -150,13 +160,6 @@ public class S3Source implements FileSource {
     // Shared helpers
     // -------------------------------------------------------------------------
 
-    static boolean isVenvPath(Path relativePath) {
-        for (Path component : relativePath) {
-            if ("venv".equals(component.toString())) return true;
-        }
-        return false;
-    }
-
     static PathMatcher[] buildMatchers(String[] filemasks) {
         if (filemasks == null || filemasks.length == 0) return null;
         PathMatcher[] matchers = new PathMatcher[filemasks.length];
@@ -172,6 +175,19 @@ public class S3Source implements FileSource {
         if (filename == null) return false;
         for (PathMatcher matcher : matchers) {
             if (matcher.matches(filename)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Returns {@code true} if any exclude pattern matches any component of {@code relativePath}.
+     */
+    static boolean matchesAnyExclude(String relativePath, PathMatcher[] excludeMatchers) {
+        if (excludeMatchers == null) return false;
+        for (Path component : Path.of(relativePath)) {
+            for (PathMatcher matcher : excludeMatchers) {
+                if (matcher.matches(component)) return true;
+            }
         }
         return false;
     }

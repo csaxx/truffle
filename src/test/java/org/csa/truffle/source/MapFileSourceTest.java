@@ -53,6 +53,19 @@ class MapFileSourceTest {
     }
 
     @Test
+    void listFiles_excludeFilemaskExcludesFile() throws IOException {
+        MapFileSource src = new MapFileSource(null, new String[]{"excluded.py"});
+        src.put("keep.py", "keep");
+        src.put("excluded.py", "excluded");
+        src.put("also_keep.py", "also keep");
+
+        Map<String, Optional<Instant>> files = src.listFiles();
+        assertTrue(files.containsKey("keep.py"));
+        assertTrue(files.containsKey("also_keep.py"));
+        assertFalse(files.containsKey("excluded.py"));
+    }
+
+    @Test
     void readFile_returnsContent() throws IOException {
         MapFileSource src = new MapFileSource();
         src.put("script.py", "hello world");

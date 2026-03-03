@@ -49,14 +49,16 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
      * Backward-compat: uses classpath {@code python/} directory, 5-minute reload interval.
      */
     public ProcessFunctionPython() {
-        this(new ResourceSourceConfig("python", new String[]{"*.py"}), new SchedulerConfig(Duration.ofMinutes(5)));
+        this(new ResourceSourceConfig("python", new String[]{"*.py"}, new String[]{"flink_types.py", "venv"}),
+                new SchedulerConfig(Duration.ofMinutes(5)));
     }
 
     /**
      * Backward-compat: uses classpath {@code python/} directory with a custom interval.
      */
     public ProcessFunctionPython(Duration interval) {
-        this(new ResourceSourceConfig("python", new String[]{"*.py"}), new SchedulerConfig(interval));
+        this(new ResourceSourceConfig("python", new String[]{"*.py"}, new String[]{"flink_types.py", "venv"}),
+                new SchedulerConfig(interval));
     }
 
     /**

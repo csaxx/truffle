@@ -38,7 +38,7 @@ class GitSourceTest {
     private GitSource gitlabSource(String token) {
         String apiBase = base() + "/api/v4/projects/owner%2Frepo";
         return new GitSource(base() + "/owner/repo", "python", "main",
-                token, GitForgeType.GITLAB, null, apiBase);
+                token, GitForgeType.GITLAB, null, null, apiBase);
     }
 
     /**
@@ -48,7 +48,7 @@ class GitSourceTest {
     private GitSource giteaSource(String token) {
         String apiBase = base() + "/api/v1/repos/owner/repo";
         return new GitSource(base() + "/owner/repo", "python", "main",
-                token, GitForgeType.GITEA, null, apiBase);
+                token, GitForgeType.GITEA, null, null, apiBase);
     }
 
     private void stubFile(String name, String body) {

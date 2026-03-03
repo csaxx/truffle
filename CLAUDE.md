@@ -164,10 +164,13 @@ cannot determine the mtime for a file. `setChangeListener(Runnable)` and `close(
 default no-op implementations; push-capable sources override them.
 
 All implementations **auto-discover** files by walking/listing their source — no
-`index.txt` is needed. `venv/` subtrees are excluded at any nesting depth. The `filemasks`
-`String[]` filters by filename — a file matches if its name matches **any** pattern;
-`null` or empty array = no filter (accept all). Results are sorted alphabetically.
-Filemasks are always supplied in the config constructor; no post-construction mutation exists.
+`index.txt` is needed. The `filemasks` `String[]` filters by filename — a file matches
+if its name matches **any** pattern; `null` or empty array = no filter (accept all).
+The `excludeFilemasks` `String[]` excludes files — a file is excluded if any pattern
+matches **any component** of its relative path (not just the filename). Pass `"venv"` in
+`excludeFilemasks` to exclude `venv/` subtrees. Results are sorted alphabetically.
+Filemasks and excludeFilemasks are supplied in the config constructor; no post-construction
+mutation exists.
 
 Five implementations ship with the project, split into subpackages:
 
@@ -180,13 +183,15 @@ Five implementations ship with the project, split into subpackages:
 | `map.MapFileSource` | In-memory mutable map | `new MapFileSourceConfig(new String[]{"*.py"})` |
 
 **Config records and `FileSourceFactory`.** `FileSourceConfig` is a `Serializable` marker
-interface with a single method `filemasks()` returning `String[]`. All record components are
-primitives, Strings, or enums — serialization is guaranteed. `FileSourceFactory.create(FileSourceConfig)`
-is a `final class` with a static factory method; it uses a `switch` on the concrete type
-to instantiate the correct `FileSource`. S3 credential wiring and `Path` conversion live
-here, keeping the source classes free of construction details. `ProcessFunctionPython` stores
-a `FileSourceConfig`; `open()` creates a `ScheduledReloader` which calls the factory. The
-default constructor uses `new ResourceSourceConfig("python", new String[]{"*.py"})`.
+interface with two methods: `filemasks()` and `excludeFilemasks()` (default returns `null`).
+All record components are primitives, Strings, or enums — serialization is guaranteed.
+`FileSourceFactory.create(FileSourceConfig)` is a `final class` with a static factory method;
+it uses a `switch` on the concrete type to instantiate the correct `FileSource`. S3 credential
+wiring and `Path` conversion live here, keeping the source classes free of construction details.
+`ProcessFunctionPython` stores a `FileSourceConfig`; `open()` creates a `ScheduledReloader`
+which calls the factory. The default constructor uses
+`new ResourceSourceConfig("python", new String[]{"*.py"}, new String[]{"flink_types.py", "venv"})`
+(excludes the IDE type-stub and venv subtrees).
 
 **`resource.ResourceSource`** auto-discovers files from the classpath by walking the
 `{directory}` tree (handles both `file://` filesystem JARs and `jar://` running-from-JAR protocols).
@@ -196,8 +201,8 @@ no clone required. Supports GitHub, GitLab, and Gitea/Forgejo. The forge is iden
 by `GitForgeType` (GITHUB, GITLAB, GITEA); pass `null` in `GitSourceConfig` to
 auto-detect from the URL (github.com → GITHUB, all others → GITLAB). Authentication:
 set `token`; pass `null` for public repos. File contents are fetched via raw-content
-HTTP. `GitSource` has a 7-arg public constructor accepting a pre-built `apiBaseUrl` for
-test isolation.
+HTTP. `GitSource` has an 8-arg public constructor accepting `filemasks`, `excludeFilemasks`,
+and a pre-built `apiBaseUrl` for test isolation.
 
 **`s3.S3Source`** auto-discovers files via `listObjectsV2Paginator` (mtime comes free
 from listing, no extra `HeadObject` calls). `S3SourceConfig` has two static helpers:
@@ -223,8 +228,8 @@ registers `this::load` as the listener in its constructor.
 
 **Adding a new `FileSource`.** Implement `listFiles()` and `readFile(name)` in a new
 class (place it in an appropriate `source/` subpackage). Also create a config record
-implementing `FileSourceConfig` (with `filemasks()` returning `String[]`), add a
-corresponding `case` to `FileSourceFactory.create()`, and pass the config to
+implementing `FileSourceConfig` (with `filemasks()` and optionally `excludeFilemasks()`),
+add a corresponding `case` to `FileSourceFactory.create()`, and pass the config to
 `new ProcessFunctionPython(yourConfig, schedulerConfig)`. No other changes needed.
 
 ### FileLoader

@@ -63,4 +63,14 @@ class ResourceSourceTest {
         ResourceSource src = new ResourceSource(DIR);
         assertThrows(IOException.class, () -> src.readFile("no_such_file.py"));
     }
+
+    @Test
+    void listFiles_excludeFilemaskExcludesFile() throws IOException {
+        // python_hr_v1 has: file_in_both_changed.py, file_in_both_unchanged.py, file_only_in_v1.py
+        ResourceSource src = new ResourceSource(DIR, null, new String[]{"file_in_both_unchanged.py"});
+        Map<String, Optional<Instant>> files = src.listFiles();
+        assertFalse(files.containsKey("file_in_both_unchanged.py"), "excluded file should not appear");
+        assertTrue(files.containsKey("file_in_both_changed.py"));
+        assertTrue(files.containsKey("file_only_in_v1.py"));
+    }
 }
