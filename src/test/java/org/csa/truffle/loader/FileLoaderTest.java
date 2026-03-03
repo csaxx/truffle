@@ -226,7 +226,7 @@ class FileLoaderTest {
             src.switchTo("python_hr_v2");
             LoadResult result = loader.load();
             assertTrue(result.success());
-            assertTrue(result.changes().stream().anyMatch(c -> c.status() != FileChangeInfo.ChangeStatus.UNMODIFIED));
+            assertTrue(result.changes().stream().anyMatch(c -> c.status() != LoadResult.ChangeStatus.UNMODIFIED));
             assertTrue(loader.getStatus().getLastChangedAt().isAfter(firstChangedAt));
         }
     }
@@ -239,7 +239,7 @@ class FileLoaderTest {
             Instant firstChangedAt = loader.getStatus().getLastChangedAt();
             LoadResult result = loader.load();
             assertTrue(result.success());
-            assertTrue(result.changes().stream().allMatch(c -> c.status() == FileChangeInfo.ChangeStatus.UNMODIFIED));
+            assertTrue(result.changes().stream().allMatch(c -> c.status() == LoadResult.ChangeStatus.UNMODIFIED));
             assertEquals(firstChangedAt, loader.getStatus().getLastChangedAt());
         }
     }
@@ -312,7 +312,7 @@ class FileLoaderTest {
     void onChanged_callback_firedWhenFilesChange() throws Exception {
         AtomicInteger count = new AtomicInteger();
         SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
-        FileLoader.FileLoadCallback callback = (result) -> {
+        FileLoader.ReloadCallback callback = (result) -> {
             if (result.success()) count.incrementAndGet();
         };
         try (FileLoader loader = new FileLoader(src, callback)) {
@@ -329,7 +329,7 @@ class FileLoaderTest {
         AtomicInteger count = new AtomicInteger();
         SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
 
-        FileLoader.FileLoadCallback callback = (result) -> {
+        FileLoader.ReloadCallback callback = (result) -> {
             if (result.success()) count.incrementAndGet();
         };
 

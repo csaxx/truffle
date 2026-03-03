@@ -26,6 +26,11 @@ public class PolyglotInterpreter implements AutoCloseable {
      */
     private static final ConcurrentHashMap<TruffleLanguage, Engine> SHARED_ENGINES = new ConcurrentHashMap<>();
 
+    public static void closeSharedEngines() {
+        SHARED_ENGINES.values().forEach(Engine::close);
+        SHARED_ENGINES.clear();
+    }
+
     /**
      * Maps name to context, in index order.
      */
@@ -214,11 +219,6 @@ public class PolyglotInterpreter implements AutoCloseable {
     @Override
     public void close() {
         reset();
-    }
-
-    public void closeSharedEngines() {
-        SHARED_ENGINES.values().forEach(Engine::close);
-        SHARED_ENGINES.clear();
     }
 
 }

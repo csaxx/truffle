@@ -2,7 +2,6 @@ package org.csa.truffle.scheduler;
 
 import org.csa.truffle.interpreter.PolyglotInterpreter;
 import org.csa.truffle.interpreter.TruffleLanguage;
-import org.csa.truffle.loader.FileChangeInfo;
 import org.csa.truffle.loader.FileLoader;
 import org.csa.truffle.loader.FileLoaderStatus;
 import org.csa.truffle.loader.LoadResult;
@@ -101,47 +100,57 @@ public class ScheduledReloader implements AutoCloseable {
     // -------------------------------------------------------------------------
 
     private void doReload() throws IOException {
+
         LoadResult result = loader.load();
 
         if (!result.success()) {
             throw new IOException("FileLoader failed: " + result.error().getMessage(), result.error());
         }
 
-        boolean needsRebuild = result.changes().stream()
-                .anyMatch(c -> c.status() != FileChangeInfo.ChangeStatus.UNMODIFIED);
+        boolean hasChanged = result.changes().stream()
+                .anyMatch(c -> c.status() != LoadResult.ChangeStatus.UNMODIFIED);
 
-        if (needsRebuild) {
-            PolyglotInterpreter interpreter;
+        if (hasChanged) {
+
             try {
-                interpreter = new PolyglotInterpreter();
-                for (Map.Entry<String, String> entry : loader.getFileContents().entrySet()) {
+                PolyglotInterpreter interpreter = new PolyglotInterpreter();
+
+                for (Map.Entry<String, String> entry : result.contents().entrySet()) {
                     interpreter.addContext(TruffleLanguage.PYTHON, entry.getKey(), entry.getValue());
                 }
+
+                try {
+                    callback.onReload(result.status(), interpreter);
+                } catch (Exception e) {
+                    log.error("Reload callback failed: {}", e.getMessage(), e);
+                }
+
             } catch (Exception e) {
                 throw new IOException("GraalPyInterpreter initialization failed: " + e.getMessage(), e);
             }
-            try {
-                callback.onReload(result.status(), interpreter);
-            } catch (Exception e) {
-                log.error("Reload callback failed: {}", e.getMessage(), e);
-            }
         }
 
-        firstErrorAt = null;  // clear error streak on success
+        // clear error streak on success
+        firstErrorAt = null;
     }
 
     private void doReloadQuietly() {
+
         try {
             doReload();
         } catch (IOException e) {
             log.error("Scheduled reload failed", e);
 
             Duration grace = schedulerConfig.gracePeriod();
+
             if (grace != null && grace.compareTo(Duration.ZERO) > 0 && fatalError == null) {
+
                 if (firstErrorAt == null) {
                     firstErrorAt = Instant.now();
                 }
+
                 Duration streak = Duration.between(firstErrorAt, Instant.now());
+
                 if (streak.compareTo(grace) >= 0) {
                     String msg = String.format(
                             "Python script reload grace period exceeded: errors for %ds " +
@@ -149,6 +158,7 @@ public class ScheduledReloader implements AutoCloseable {
                             streak.toSeconds(), grace.toSeconds(), e.getMessage());
                     fatalError = new RuntimeException(msg, e);
                     log.error("Grace period exceeded: {}", msg);
+
                     try {
                         callback.onReload(loader.getStatus(), null);
                     } catch (Exception callbackEx) {
@@ -209,4 +219,5 @@ public class ScheduledReloader implements AutoCloseable {
         } catch (Exception ignored) {
         }
     }
+
 }

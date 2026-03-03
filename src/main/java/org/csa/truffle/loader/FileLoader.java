@@ -1,7 +1,6 @@
 package org.csa.truffle.loader;
 
 import org.apache.commons.lang3.StringUtils;
-import org.csa.truffle.loader.FileChangeInfo.ChangeStatus;
 import org.csa.truffle.source.FileSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,7 +20,7 @@ import java.util.*;
  * the source cannot provide a timestamp are always re-read. Files that
  * disappear are evicted from the cache.
  *
- * <p>An optional {@link FileLoadCallback} supplied at construction time is invoked
+ * <p>An optional {@link ReloadCallback} supplied at construction time is invoked
  * after every {@link #load()} attempt.
  *
  * <p>Operational state is tracked in a {@link FileLoaderStatus} instance;
@@ -33,7 +32,7 @@ public class FileLoader implements Closeable {
      * Callback fired by {@link FileLoader#load()} after each attempt.
      */
     @FunctionalInterface
-    public interface FileLoadCallback {
+    public interface ReloadCallback {
         void onReload(LoadResult result);
     }
 
@@ -44,7 +43,7 @@ public class FileLoader implements Closeable {
     /**
      * Optional callback for {@link LoadResult} on {@link #load()}.
      */
-    private final FileLoadCallback callback;
+    private final ReloadCallback callback;
 
     /**
      * Ordered cache: filename → current content. Preserved across calls.
@@ -75,7 +74,7 @@ public class FileLoader implements Closeable {
      * @param source   the source to load files from
      * @param callback invoked after every {@link #load()} attempt; {@code null} to disable
      */
-    public FileLoader(FileSource source, FileLoadCallback callback) {
+    public FileLoader(FileSource source, ReloadCallback callback) {
         this.source = source;
         this.callback = callback;
 
@@ -100,7 +99,7 @@ public class FileLoader implements Closeable {
      *
      * <p>{@link FileLoaderStatus} is updated on every call regardless of outcome.
      * This method never throws; I/O errors are captured in the returned
-     * {@link LoadResult} and forwarded to the {@link FileLoadCallback} (if set).
+     * {@link LoadResult} and forwarded to the {@link ReloadCallback} (if set).
      *
      * @return a {@link LoadResult} describing the outcome; success is
      * {@code true} when no I/O error occurred
@@ -117,7 +116,7 @@ public class FileLoader implements Closeable {
 
             boolean changed = false;
 
-            List<FileChangeInfo> changes = new ArrayList<>();
+            List<LoadResult.FileChangeInfo> changes = new ArrayList<>();
             Map<String, String> newFileContents = new LinkedHashMap<>();
             Map<String, Instant> newModTimes = new HashMap<>();
 
@@ -136,38 +135,38 @@ public class FileLoader implements Closeable {
                 }
 
                 // read file (if necessary) and get contents
-                ChangeStatus changeStatus;
+                LoadResult.ChangeStatus changeStatus;
                 String content;
                 if (needsRead) {
                     content = source.readFile(filePath);
                     String previous = fileContents.get(filePath);
                     if (previous == null) {
-                        changeStatus = ChangeStatus.ADDED;
+                        changeStatus = LoadResult.ChangeStatus.ADDED;
                         log.info("New file loaded: {}", filePath);
                         changed = true;
                     } else if (!StringUtils.equals(content, previous)) {
-                        changeStatus = ChangeStatus.MODIFIED;
+                        changeStatus = LoadResult.ChangeStatus.MODIFIED;
                         log.info("File content updated: {}", filePath);
                         changed = true;
                     } else {
-                        changeStatus = ChangeStatus.UNMODIFIED;
+                        changeStatus = LoadResult.ChangeStatus.UNMODIFIED;
                         log.debug("File re-read but unchanged: {}", filePath);
                     }
                 } else {
                     content = fileContents.get(filePath); // reuse from cache
-                    changeStatus = ChangeStatus.UNMODIFIED;
+                    changeStatus = LoadResult.ChangeStatus.UNMODIFIED;
                     log.debug("Skipped unchanged file (modTime): {}", filePath);
                 }
 
                 newFileContents.put(filePath, content);
-                changes.add(new FileChangeInfo(filePath, modTime, changeStatus));
+                changes.add(new LoadResult.FileChangeInfo(filePath, modTime, changeStatus));
             }
 
             // Detect removed files
             for (String filePath : fileContents.keySet()) {
                 if (!newFileContents.containsKey(filePath)) {
                     log.info("File removed from index: {}", filePath);
-                    changes.add(new FileChangeInfo(filePath, Optional.empty(), ChangeStatus.REMOVED));
+                    changes.add(new LoadResult.FileChangeInfo(filePath, Optional.empty(), LoadResult.ChangeStatus.REMOVED));
                     changed = true;
                 }
             }
@@ -196,8 +195,7 @@ public class FileLoader implements Closeable {
             status.loadedFiles = Set.copyOf(newFileContents.keySet());
             status.firstErrorAt = null;  // clear error streak on success
 
-            List<FileChangeInfo> changesCopy = List.copyOf(changes);
-            result = new LoadResult(status, changesCopy);
+            result = new LoadResult(status, List.copyOf(changes), Map.copyOf(newFileContents));
 
         } catch (Exception e) {
 
