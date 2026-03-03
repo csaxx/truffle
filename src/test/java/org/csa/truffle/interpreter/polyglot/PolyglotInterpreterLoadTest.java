@@ -1,4 +1,4 @@
-package org.csa.truffle.interpreter;
+package org.csa.truffle.interpreter.polyglot;
 
 import org.graalvm.polyglot.Value;
 import org.junit.jupiter.api.Test;

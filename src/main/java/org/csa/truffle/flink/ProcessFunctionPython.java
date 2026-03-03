@@ -3,7 +3,7 @@ package org.csa.truffle.flink;
 import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.Collector;
-import org.csa.truffle.interpreter.PolyglotInterpreter;
+import org.csa.truffle.interpreter.polyglot.PolyglotInterpreter;
 import org.csa.truffle.scheduler.ScheduledReloader;
 import org.csa.truffle.scheduler.SchedulerConfig;
 import org.csa.truffle.source.FileSourceConfig;

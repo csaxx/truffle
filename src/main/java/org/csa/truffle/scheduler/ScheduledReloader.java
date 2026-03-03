@@ -1,7 +1,7 @@
 package org.csa.truffle.scheduler;
 
-import org.csa.truffle.interpreter.PolyglotInterpreter;
-import org.csa.truffle.interpreter.TruffleLanguage;
+import org.csa.truffle.interpreter.polyglot.PolyglotInterpreter;
+import org.csa.truffle.interpreter.polyglot.TruffleLanguage;
 import org.csa.truffle.loader.FileLoader;
 import org.csa.truffle.loader.FileLoaderStatus;
 import org.csa.truffle.loader.LoadResult;

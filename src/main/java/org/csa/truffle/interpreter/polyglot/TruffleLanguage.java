@@ -1,4 +1,4 @@
-package org.csa.truffle.interpreter;
+package org.csa.truffle.interpreter.polyglot;
 
 public enum TruffleLanguage {
     PYTHON("python"),

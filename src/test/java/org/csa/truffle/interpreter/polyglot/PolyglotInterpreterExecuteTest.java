@@ -1,4 +1,4 @@
-package org.csa.truffle.interpreter;
+package org.csa.truffle.interpreter.polyglot;
 
 import org.apache.flink.util.Collector;
 import org.junit.jupiter.api.Test;
