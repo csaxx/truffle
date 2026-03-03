@@ -16,12 +16,20 @@ class GraalPyInterpreterExecuteTest {
         @Override public void close() {}
     }
 
+    private static GraalPyInterpreter build(Map<String, String> files) throws Exception {
+        GraalPyInterpreter interp = new GraalPyInterpreter();
+        for (Map.Entry<String, String> e : files.entrySet()) {
+            interp.addFile(TruffleLanguage.PYTHON, e.getKey(), e.getValue());
+        }
+        return interp;
+    }
+
     @Test
     void executeAll_invokesAllPresentFunctions() throws Exception {
         LinkedHashMap<String, String> files = new LinkedHashMap<>();
         files.put("a.py", "def fn(x, out): out.collect('a:' + x)");
         files.put("b.py", "def fn(x, out): out.collect('b:' + x)");
-        try (GraalPyInterpreter interp = new GraalPyInterpreter(files)) {
+        try (GraalPyInterpreter interp = build(files)) {
             TestCollector col = new TestCollector();
             interp.executeAll("fn", "hello", col);
             assertEquals(List.of("a:hello", "b:hello"), col.output);
@@ -33,7 +41,7 @@ class GraalPyInterpreterExecuteTest {
         LinkedHashMap<String, String> files = new LinkedHashMap<>();
         files.put("a.py", "def fn(x, out): out.collect('a:' + x)");
         files.put("b.py", "def fn(x, out): out.collect('b:' + x)");
-        try (GraalPyInterpreter interp = new GraalPyInterpreter(files)) {
+        try (GraalPyInterpreter interp = build(files)) {
             TestCollector col = new TestCollector();
             interp.execute("b.py", "fn", "hello", col);
             assertEquals(List.of("b:hello"), col.output);
@@ -45,7 +53,7 @@ class GraalPyInterpreterExecuteTest {
         LinkedHashMap<String, String> files = new LinkedHashMap<>();
         files.put("has.py",     "def fn(x, out): out.collect('has:' + x)");
         files.put("missing.py", "other = 99");   // no fn
-        try (GraalPyInterpreter interp = new GraalPyInterpreter(files)) {
+        try (GraalPyInterpreter interp = build(files)) {
             TestCollector col = new TestCollector();
             interp.executeAll("fn", "x", col);
             assertEquals(List.of("has:x"), col.output);
@@ -54,7 +62,7 @@ class GraalPyInterpreterExecuteTest {
 
     @Test
     void execute_missingMember_isNoOp() throws Exception {
-        try (GraalPyInterpreter interp = new GraalPyInterpreter(Map.of("a.py", "x = 1"))) {
+        try (GraalPyInterpreter interp = build(Map.of("a.py", "x = 1"))) {
             // should not throw
             interp.execute("a.py", "nonexistent", "arg");
         }
@@ -62,7 +70,7 @@ class GraalPyInterpreterExecuteTest {
 
     @Test
     void getMember_cachedOnSecondAccess() throws Exception {
-        try (GraalPyInterpreter interp = new GraalPyInterpreter(Map.of("a.py", "val = 7"))) {
+        try (GraalPyInterpreter interp = build(Map.of("a.py", "val = 7"))) {
             var v1 = interp.getMember("a.py", "val");
             var v2 = interp.getMember("a.py", "val");
             assertSame(v1, v2);  // same Value instance returned from cache

@@ -1,6 +1,5 @@
 package org.csa.truffle.source;
 
-import org.csa.truffle.graal.GraalPyInterpreter;
 import org.csa.truffle.source.file.FileSystemSource;
 
 import java.io.Closeable;

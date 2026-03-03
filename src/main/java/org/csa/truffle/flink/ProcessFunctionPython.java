@@ -77,6 +77,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
 
         scheduler = new ScheduledReloader(sourceConfig, schedulerConfig,
                 (status, newInterpreter) -> {
+                    // update interpreter (called from scheduler thread)
                     GraalPyInterpreter oldInterpreter = this.interpreter;
                     this.interpreter = newInterpreter;
                     if (oldInterpreter != null) {
@@ -111,6 +112,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
     @Override
     public void processElement(String line, Context ctx, Collector<String> out) {
 
+        // check for exception in scheduler
         scheduler.checkForFatalError();
 
         for (String file : interpreter.getLoadedFileNames()) {

@@ -11,11 +11,13 @@ public class GraalPyContext {
 
     private final Context context;
     private final String name;
+    private final TruffleLanguage language;
     private final Map<String, Value> memberCache = new HashMap<>();
 
-    public GraalPyContext(Context context, String name) {
+    public GraalPyContext(Context context, String name, TruffleLanguage language) {
         this.context = context;
         this.name = name;
+        this.language = language;
     }
 
     public Context context() {
@@ -26,17 +28,21 @@ public class GraalPyContext {
         return name;
     }
 
+    public TruffleLanguage language() {
+        return language;
+    }
+
     /**
      * Returns the cached {@link Value} for {@code memberName}.
      *
-     * @throws NoSuchElementException if the Python module does not define that name
+     * @throws NoSuchElementException if the module does not define that name
      */
     public Value getMember(String memberName) {
         Value cached = memberCache.get(memberName);
         if (cached != null) return cached;
-        Value member = context.getBindings("python").getMember(memberName);
+        Value member = context.getBindings(language.getId()).getMember(memberName);
         if (member == null) throw new NoSuchElementException(
-                "Python member '" + memberName + "' not defined in '" + name + "'");
+                "Member '" + memberName + "' not defined in '" + name + "'");
         memberCache.put(memberName, member);
         return member;
     }

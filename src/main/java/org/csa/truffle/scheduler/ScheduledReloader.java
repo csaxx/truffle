@@ -1,6 +1,7 @@
 package org.csa.truffle.scheduler;
 
 import org.csa.truffle.graal.GraalPyInterpreter;
+import org.csa.truffle.graal.TruffleLanguage;
 import org.csa.truffle.loader.FileChangeInfo;
 import org.csa.truffle.loader.FileLoader;
 import org.csa.truffle.loader.FileLoaderStatus;
@@ -14,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -61,7 +63,12 @@ public class ScheduledReloader implements AutoCloseable {
 
     public ScheduledReloader(FileSource source, SchedulerConfig schedulerConfig,
                              ScheduledReloadCallback callback) {
-        this.loader = new FileLoader(source);
+        this(new FileLoader(source), schedulerConfig, callback);
+    }
+
+    public ScheduledReloader(FileLoader fileLoader, SchedulerConfig schedulerConfig,
+                             ScheduledReloadCallback callback) {
+        this.loader = fileLoader;
         this.schedulerConfig = schedulerConfig;
         this.callback = callback;
     }
@@ -106,7 +113,10 @@ public class ScheduledReloader implements AutoCloseable {
         if (needsRebuild) {
             GraalPyInterpreter interpreter;
             try {
-                interpreter = new GraalPyInterpreter(loader.getFileContents());
+                interpreter = new GraalPyInterpreter();
+                for (Map.Entry<String, String> entry : loader.getFileContents().entrySet()) {
+                    interpreter.addFile(TruffleLanguage.PYTHON, entry.getKey(), entry.getValue());
+                }
             } catch (Exception e) {
                 throw new IOException("GraalPyInterpreter initialization failed: " + e.getMessage(), e);
             }
