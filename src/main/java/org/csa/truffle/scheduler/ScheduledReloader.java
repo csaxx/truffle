@@ -1,7 +1,7 @@
 package org.csa.truffle.scheduler;
 
-import org.csa.truffle.graal.GraalPyInterpreter;
-import org.csa.truffle.graal.TruffleLanguage;
+import org.csa.truffle.interpreter.PolyglotInterpreter;
+import org.csa.truffle.interpreter.TruffleLanguage;
 import org.csa.truffle.loader.FileChangeInfo;
 import org.csa.truffle.loader.FileLoader;
 import org.csa.truffle.loader.FileLoaderStatus;
@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
  * Performs an initial synchronous reload then schedules periodic background reloads
  * at the configured interval.
  *
- * <p>A new {@link GraalPyInterpreter} is built whenever the loader detects content changes.
+ * <p>A new {@link PolyglotInterpreter} is built whenever the loader detects content changes.
  * Observable status is accessible via {@link #getStatus()} and backed by {@link FileLoaderStatus}.
  *
  * <p>Thread-safety: {@code fatalError} and {@code firstErrorAt} are {@code volatile} — writes
@@ -41,7 +41,7 @@ public class ScheduledReloader implements AutoCloseable {
      */
     @FunctionalInterface
     public interface ScheduledReloadCallback {
-        void onReload(FileLoaderStatus status, GraalPyInterpreter interpreter);
+        void onReload(FileLoaderStatus status, PolyglotInterpreter interpreter);
     }
 
     private final FileLoader loader;
@@ -111,11 +111,11 @@ public class ScheduledReloader implements AutoCloseable {
                 .anyMatch(c -> c.status() != FileChangeInfo.ChangeStatus.UNMODIFIED);
 
         if (needsRebuild) {
-            GraalPyInterpreter interpreter;
+            PolyglotInterpreter interpreter;
             try {
-                interpreter = new GraalPyInterpreter();
+                interpreter = new PolyglotInterpreter();
                 for (Map.Entry<String, String> entry : loader.getFileContents().entrySet()) {
-                    interpreter.addFile(TruffleLanguage.PYTHON, entry.getKey(), entry.getValue());
+                    interpreter.addContext(TruffleLanguage.PYTHON, entry.getKey(), entry.getValue());
                 }
             } catch (Exception e) {
                 throw new IOException("GraalPyInterpreter initialization failed: " + e.getMessage(), e);

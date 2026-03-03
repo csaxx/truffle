@@ -1,4 +1,4 @@
-package org.csa.truffle.graal;
+package org.csa.truffle.interpreter;
 
 public enum TruffleLanguage {
     PYTHON("python"),

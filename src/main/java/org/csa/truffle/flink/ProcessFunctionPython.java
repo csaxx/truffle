@@ -3,7 +3,7 @@ package org.csa.truffle.flink;
 import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.Collector;
-import org.csa.truffle.graal.GraalPyInterpreter;
+import org.csa.truffle.interpreter.PolyglotInterpreter;
 import org.csa.truffle.scheduler.ScheduledReloader;
 import org.csa.truffle.scheduler.SchedulerConfig;
 import org.csa.truffle.source.FileSourceConfig;
@@ -31,7 +31,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
     private final SchedulerConfig schedulerConfig;
 
     private transient ScheduledReloader scheduler;
-    private transient GraalPyInterpreter interpreter;
+    private transient PolyglotInterpreter interpreter;
 
     // -------------------------------------------------------------------------
     // Constructors
@@ -78,7 +78,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
         scheduler = new ScheduledReloader(sourceConfig, schedulerConfig,
                 (status, newInterpreter) -> {
                     // update interpreter (called from scheduler thread)
-                    GraalPyInterpreter oldInterpreter = this.interpreter;
+                    PolyglotInterpreter oldInterpreter = this.interpreter;
                     this.interpreter = newInterpreter;
                     if (oldInterpreter != null) {
                         oldInterpreter.close();
@@ -88,7 +88,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
         // fires callback synchronously → interpreter is set
         scheduler.start();
 
-        log.debug("Loaded {} process_element function(s)", interpreter.getLoadedFileNames().size());
+        log.debug("Loaded {} process_element function(s)", interpreter.getLoadedNames().size());
     }
 
     @Override
@@ -115,7 +115,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
         // check for exception in scheduler
         scheduler.checkForFatalError();
 
-        for (String file : interpreter.getLoadedFileNames()) {
+        for (String file : interpreter.getLoadedNames()) {
             try {
                 interpreter.execute(file, "process_element", line, out);
             } catch (Exception e) {

@@ -1,4 +1,4 @@
-package org.csa.truffle.graal;
+package org.csa.truffle.interpreter;
 
 import org.graalvm.polyglot.Value;
 import org.junit.jupiter.api.Test;
@@ -8,27 +8,27 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import static org.junit.jupiter.api.Assertions.*;
 
-class GraalPyInterpreterLoadTest {
+class PolyglotInterpreterLoadTest {
 
-    private static GraalPyInterpreter build(Map<String, String> files) throws Exception {
-        GraalPyInterpreter interp = new GraalPyInterpreter();
+    private static PolyglotInterpreter build(Map<String, String> files) throws Exception {
+        PolyglotInterpreter interp = new PolyglotInterpreter();
         for (Map.Entry<String, String> e : files.entrySet()) {
-            interp.addFile(TruffleLanguage.PYTHON, e.getKey(), e.getValue());
+            interp.addContext(TruffleLanguage.PYTHON, e.getKey(), e.getValue());
         }
         return interp;
     }
 
     @Test
     void emptyMap_noFilesLoaded() throws Exception {
-        try (GraalPyInterpreter interp = build(Map.of())) {
-            assertTrue(interp.getLoadedFileNames().isEmpty());
+        try (PolyglotInterpreter interp = build(Map.of())) {
+            assertTrue(interp.getLoadedNames().isEmpty());
         }
     }
 
     @Test
     void singleFile_isLoaded() throws Exception {
-        try (GraalPyInterpreter interp = build(Map.of("a.py", "x = 1"))) {
-            assertTrue(interp.getLoadedFileNames().contains("a.py"));
+        try (PolyglotInterpreter interp = build(Map.of("a.py", "x = 1"))) {
+            assertTrue(interp.getLoadedNames().contains("a.py"));
         }
     }
 
@@ -38,14 +38,14 @@ class GraalPyInterpreterLoadTest {
         files.put("a.py", "x = 1");
         files.put("b.py", "x = 2");
         files.put("c.py", "x = 3");
-        try (GraalPyInterpreter interp = build(files)) {
-            assertEquals(List.of("a.py", "b.py", "c.py"), interp.getLoadedFileNames());
+        try (PolyglotInterpreter interp = build(files)) {
+            assertEquals(List.of("a.py", "b.py", "c.py"), interp.getLoadedNames());
         }
     }
 
     @Test
     void getMember_existingMember_returnsValue() throws Exception {
-        try (GraalPyInterpreter interp = build(Map.of("a.py", "answer = 42"))) {
+        try (PolyglotInterpreter interp = build(Map.of("a.py", "answer = 42"))) {
             Value v = interp.getMember("a.py", "answer");
             assertNotNull(v);
             assertEquals(42, v.asInt());
@@ -54,14 +54,14 @@ class GraalPyInterpreterLoadTest {
 
     @Test
     void getMember_missingMember_throwsNoSuchElementException() throws Exception {
-        try (GraalPyInterpreter interp = build(Map.of("a.py", "x = 1"))) {
+        try (PolyglotInterpreter interp = build(Map.of("a.py", "x = 1"))) {
             assertThrows(NoSuchElementException.class, () -> interp.getMember("a.py", "nonexistent"));
         }
     }
 
     @Test
     void getMember_unknownFile_throwsNoSuchElementException() throws Exception {
-        try (GraalPyInterpreter interp = build(Map.of("a.py", "x = 1"))) {
+        try (PolyglotInterpreter interp = build(Map.of("a.py", "x = 1"))) {
             assertThrows(NoSuchElementException.class, () -> interp.getMember("no_such.py", "x"));
         }
     }
@@ -71,30 +71,30 @@ class GraalPyInterpreterLoadTest {
         LinkedHashMap<String, String> files = new LinkedHashMap<>();
         files.put("has.py",     "fn = lambda: 'yes'");
         files.put("missing.py", "other = 99");
-        try (GraalPyInterpreter interp = build(files)) {
+        try (PolyglotInterpreter interp = build(files)) {
             assertEquals(1, interp.getMembers("fn").size());
         }
     }
 
     @Test
-    void addFile_duplicateId_throwsIllegalArgumentException() throws Exception {
-        try (GraalPyInterpreter interp = new GraalPyInterpreter()) {
-            interp.addFile(TruffleLanguage.PYTHON, "a.py", "x = 1");
+    void addContext_duplicateId_throwsIllegalArgumentException() throws Exception {
+        try (PolyglotInterpreter interp = new PolyglotInterpreter()) {
+            interp.addContext(TruffleLanguage.PYTHON, "a.py", "x = 1");
             assertThrows(IllegalArgumentException.class,
-                    () -> interp.addFile(TruffleLanguage.PYTHON, "a.py", "x = 2"));
+                    () -> interp.addContext(TruffleLanguage.PYTHON, "a.py", "x = 2"));
         }
     }
 
     @Test
     void reset_clearsAllContexts() throws Exception {
-        GraalPyInterpreter interp = new GraalPyInterpreter();
-        interp.addFile(TruffleLanguage.PYTHON, "a.py", "x = 1");
-        interp.addFile(TruffleLanguage.PYTHON, "b.py", "y = 2");
+        PolyglotInterpreter interp = new PolyglotInterpreter();
+        interp.addContext(TruffleLanguage.PYTHON, "a.py", "x = 1");
+        interp.addContext(TruffleLanguage.PYTHON, "b.py", "y = 2");
         interp.reset();
-        assertTrue(interp.getLoadedFileNames().isEmpty());
+        assertTrue(interp.getLoadedNames().isEmpty());
         // interpreter is reusable after reset
-        interp.addFile(TruffleLanguage.PYTHON, "c.py", "z = 3");
-        assertEquals(List.of("c.py"), interp.getLoadedFileNames());
+        interp.addContext(TruffleLanguage.PYTHON, "c.py", "z = 3");
+        assertEquals(List.of("c.py"), interp.getLoadedNames());
         interp.close();
     }
 }

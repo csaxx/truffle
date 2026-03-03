@@ -1,4 +1,4 @@
-package org.csa.truffle.graal;
+package org.csa.truffle.interpreter;
 
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
@@ -7,14 +7,14 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
-public class GraalPyContext {
+public class PolyglotContext {
 
     private final Context context;
     private final String name;
     private final TruffleLanguage language;
     private final Map<String, Value> memberCache = new HashMap<>();
 
-    public GraalPyContext(Context context, String name, TruffleLanguage language) {
+    public PolyglotContext(TruffleLanguage language, String name, Context context) {
         this.context = context;
         this.name = name;
         this.language = language;
