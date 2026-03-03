@@ -67,12 +67,22 @@ class PolyglotInterpreterLoadTest {
     }
 
     @Test
-    void getMembers_returnsOnlyPresentMembers() throws Exception {
+    void getMembers_allContextsHaveMember_returnsAll() throws Exception {
+        LinkedHashMap<String, String> files = new LinkedHashMap<>();
+        files.put("a.py", "fn = lambda: 'a'");
+        files.put("b.py", "fn = lambda: 'b'");
+        try (PolyglotInterpreter interp = build(files)) {
+            assertEquals(2, interp.getMembers("fn").size());
+        }
+    }
+
+    @Test
+    void getMembers_missingMemberInContext_throwsNoSuchElementException() throws Exception {
         LinkedHashMap<String, String> files = new LinkedHashMap<>();
         files.put("has.py",     "fn = lambda: 'yes'");
         files.put("missing.py", "other = 99");
         try (PolyglotInterpreter interp = build(files)) {
-            assertEquals(1, interp.getMembers("fn").size());
+            assertThrows(NoSuchElementException.class, () -> interp.getMembers("fn"));
         }
     }
 
@@ -82,6 +92,29 @@ class PolyglotInterpreterLoadTest {
             interp.addContext(TruffleLanguage.PYTHON, "a.py", "x = 1");
             assertThrows(IllegalArgumentException.class,
                     () -> interp.addContext(TruffleLanguage.PYTHON, "a.py", "x = 2"));
+        }
+    }
+
+    @Test
+    void hasMember_presentMember_returnsTrue() throws Exception {
+        try (PolyglotInterpreter interp = build(Map.of("a.py", "answer = 42"))) {
+            assertTrue(interp.hasMember("a.py", "answer"));
+        }
+    }
+
+    @Test
+    void hasMember_absentMember_returnsFalse() throws Exception {
+        try (PolyglotInterpreter interp = build(Map.of("a.py", "x = 1"))) {
+            assertFalse(interp.hasMember("a.py", "nonexistent"));
+        }
+    }
+
+    @Test
+    void getMemberNames_returnsAllDefinedNames() throws Exception {
+        try (PolyglotInterpreter interp = build(Map.of("a.py", "x = 1\ny = 2"))) {
+            var names = interp.getMemberNames("a.py");
+            assertTrue(names.contains("x"));
+            assertTrue(names.contains("y"));
         }
     }
 

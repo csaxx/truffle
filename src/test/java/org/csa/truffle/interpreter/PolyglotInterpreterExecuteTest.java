@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PolyglotInterpreterExecuteTest {
@@ -49,22 +50,20 @@ class PolyglotInterpreterExecuteTest {
     }
 
     @Test
-    void executeAll_skipsFilesWithoutMember() throws Exception {
+    void executeAll_missingMemberInContext_throwsNoSuchElementException() throws Exception {
         LinkedHashMap<String, String> files = new LinkedHashMap<>();
         files.put("has.py",     "def fn(x, out): out.collect('has:' + x)");
         files.put("missing.py", "other = 99");   // no fn
         try (PolyglotInterpreter interp = build(files)) {
             TestCollector col = new TestCollector();
-            interp.executeAll("fn", "x", col);
-            assertEquals(List.of("has:x"), col.output);
+            assertThrows(NoSuchElementException.class, () -> interp.executeAll("fn", "x", col));
         }
     }
 
     @Test
-    void execute_missingMember_isNoOp() throws Exception {
+    void execute_missingMember_throwsNoSuchElementException() throws Exception {
         try (PolyglotInterpreter interp = build(Map.of("a.py", "x = 1"))) {
-            // should not throw
-            interp.execute("a.py", "nonexistent", "arg");
+            assertThrows(NoSuchElementException.class, () -> interp.execute("a.py", "nonexistent", "arg"));
         }
     }
 
@@ -74,6 +73,52 @@ class PolyglotInterpreterExecuteTest {
             var v1 = interp.getMember("a.py", "val");
             var v2 = interp.getMember("a.py", "val");
             assertSame(v1, v2);  // same Value instance returned from cache
+        }
+    }
+
+    @Test
+    void canExecute_function_returnsTrue() throws Exception {
+        try (PolyglotInterpreter interp = build(Map.of("a.py", "def fn(): pass"))) {
+            assertTrue(interp.canExecute("a.py", "fn"));
+        }
+    }
+
+    @Test
+    void canExecute_nonCallable_returnsFalse() throws Exception {
+        try (PolyglotInterpreter interp = build(Map.of("a.py", "val = 42"))) {
+            assertFalse(interp.canExecute("a.py", "val"));
+        }
+    }
+
+    @Test
+    void executeVoid_invokesFunction() throws Exception {
+        try (PolyglotInterpreter interp = build(Map.of("a.py", "def fn(x, out): out.collect('v:' + x)"))) {
+            TestCollector col = new TestCollector();
+            interp.executeVoid("a.py", "fn", "z", col);
+            assertEquals(List.of("v:z"), col.output);
+        }
+    }
+
+    @Test
+    void executeAllVoid_invokesAllContexts() throws Exception {
+        LinkedHashMap<String, String> files = new LinkedHashMap<>();
+        files.put("a.py", "def fn(x, out): out.collect('a:' + x)");
+        files.put("b.py", "def fn(x, out): out.collect('b:' + x)");
+        try (PolyglotInterpreter interp = build(files)) {
+            TestCollector col = new TestCollector();
+            interp.executeAllVoid("fn", "q", col);
+            assertEquals(List.of("a:q", "b:q"), col.output);
+        }
+    }
+
+    @Test
+    void executeAllVoid_missingMemberInContext_throwsNoSuchElementException() throws Exception {
+        LinkedHashMap<String, String> files = new LinkedHashMap<>();
+        files.put("has.py",     "def fn(x, out): out.collect('has:' + x)");
+        files.put("missing.py", "other = 99");
+        try (PolyglotInterpreter interp = build(files)) {
+            TestCollector col = new TestCollector();
+            assertThrows(NoSuchElementException.class, () -> interp.executeAllVoid("fn", "x", col));
         }
     }
 }
