@@ -66,59 +66,22 @@ public class GitSource implements FileSource {
     private final String[] filemasks;       // nullable
     private final String[] excludeFilemasks; // nullable
 
-    /**
-     * Creates a {@code GitSource} with an explicit forge type.
-     */
-    public GitSource(String repoUrl, String directory, String branch,
-                     String token, GitForgeType gitForgeType, String[] filemasks,
-                     String[] excludeFilemasks) {
-        this(repoUrl, directory, branch, token, gitForgeType, filemasks, excludeFilemasks,
-                buildApiBase(repoUrl, branch, gitForgeType));
-    }
-
-    /**
-     * Constructor that accepts a pre-built {@code apiBaseUrl}.
-     * Used in tests to redirect API calls to a mock server.
-     */
-    public GitSource(String repoUrl, String directory, String branch,
-                     String token, GitForgeType gitForgeType, String[] filemasks,
-                     String[] excludeFilemasks, String apiBaseUrl) {
-        this.directory = directory;
-        this.token = token;
-        this.filemasks = filemasks;
-        this.excludeFilemasks = excludeFilemasks;
-        this.branch = branch;
-        this.gitForgeType = gitForgeType;
-        this.rawBaseUrl = buildRawBase(repoUrl, branch, gitForgeType);
-        this.apiBaseUrl = apiBaseUrl;
+    public GitSource(GitSourceConfig config) {
+        GitForgeType forge = config.forge() != null ? config.forge() : detectForge(config.repoUrl());
+        this.directory = config.directory();
+        this.token = config.token();
+        this.filemasks = config.filemasks();
+        this.excludeFilemasks = config.excludeFilemasks();
+        this.branch = config.branch();
+        this.gitForgeType = forge;
+        this.rawBaseUrl = buildRawBase(config.repoUrl(), config.branch(), forge);
+        this.apiBaseUrl = config.apiBaseUrl() != null
+                ? config.apiBaseUrl()
+                : buildApiBase(config.repoUrl(), config.branch(), forge);
         this.http = HttpClient.newHttpClient();
         log.info("Initialized: rawBaseUrl={}, apiBaseUrl={}, directory={}, auth={}, forge={}",
                 rawBaseUrl, apiBaseUrl, directory,
                 StringUtils.isNotBlank(token) ? "token" : "none", gitForgeType);
-    }
-
-    /**
-     * Creates a {@code GitSource} with an explicit forge type (no filemasks, no excludeFilemasks).
-     */
-    public GitSource(String repoUrl, String directory, String branch,
-                     String token, GitForgeType gitForgeType) {
-        this(repoUrl, directory, branch, token, gitForgeType, null, null);
-    }
-
-    /**
-     * Creates a {@code GitSource} with an explicit forge type and filemasks (no excludeFilemasks).
-     */
-    public GitSource(String repoUrl, String directory, String branch,
-                     String token, GitForgeType gitForgeType, String[] filemasks) {
-        this(repoUrl, directory, branch, token, gitForgeType, filemasks, null);
-    }
-
-    /**
-     * Creates a {@code GitSource} with auto-detected forge type.
-     * {@code github.com} → {@link GitForgeType#GITHUB}; all other hosts → {@link GitForgeType#GITLAB}.
-     */
-    public GitSource(String repoUrl, String directory, String branch, String token) {
-        this(repoUrl, directory, branch, token, detectForge(repoUrl));
     }
 
     /**

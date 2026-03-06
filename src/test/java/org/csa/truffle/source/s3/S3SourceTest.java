@@ -1,6 +1,5 @@
-package org.csa.truffle.source;
+package org.csa.truffle.source.s3;
 
-import org.csa.truffle.source.s3.S3Source;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -77,7 +76,7 @@ class S3SourceTest {
                 s3obj("scripts/transform.py", t),
                 s3obj("scripts/filter.py", t));
 
-        S3Source src = new S3Source(s3, BUCKET, "scripts");
+        S3Source src = new S3Source(s3, new S3SourceConfig(BUCKET, "scripts"));
         Map<String, Optional<Instant>> files = src.listFiles();
 
         assertEquals(2, files.size());
@@ -91,7 +90,7 @@ class S3SourceTest {
         Instant expected = Instant.parse("2024-06-15T12:00:00Z");
         stubList(s3, s3obj("scripts/transform.py", expected));
 
-        S3Source src = new S3Source(s3, BUCKET, "scripts");
+        S3Source src = new S3Source(s3, new S3SourceConfig(BUCKET, "scripts"));
         Map<String, Optional<Instant>> files = src.listFiles();
 
         assertEquals(Optional.of(expected), files.get("transform.py"));
@@ -103,7 +102,7 @@ class S3SourceTest {
         // objects returned out of alphabetical order by S3
         stubList(s3, s3obj("p/z.py"), s3obj("p/a.py"));
 
-        S3Source src = new S3Source(s3, BUCKET, "p");
+        S3Source src = new S3Source(s3, new S3SourceConfig(BUCKET, "p"));
         Map<String, Optional<Instant>> files = src.listFiles();
 
         assertEquals(List.of("a.py", "z.py"), List.copyOf(files.keySet()));
@@ -114,7 +113,7 @@ class S3SourceTest {
         S3Client s3 = mock(S3Client.class);
         stubList(s3, s3obj("transform.py"));
 
-        S3Source src = new S3Source(s3, BUCKET, "");
+        S3Source src = new S3Source(s3, new S3SourceConfig(BUCKET, ""));
         Map<String, Optional<Instant>> files = src.listFiles();
 
         assertTrue(files.containsKey("transform.py"));
@@ -127,7 +126,7 @@ class S3SourceTest {
         S3Client s3 = mock(S3Client.class);
         stubList(s3, s3obj("scripts/transform.py"));
 
-        S3Source src = new S3Source(s3, BUCKET, "scripts");
+        S3Source src = new S3Source(s3, new S3SourceConfig(BUCKET, "scripts"));
         Map<String, Optional<Instant>> files = src.listFiles();
 
         assertTrue(files.containsKey("transform.py"));
@@ -140,7 +139,7 @@ class S3SourceTest {
         // S3 sometimes includes explicit directory marker objects ending with '/'
         stubList(s3, s3obj("scripts/"), s3obj("scripts/real.py"));
 
-        S3Source src = new S3Source(s3, BUCKET, "scripts");
+        S3Source src = new S3Source(s3, new S3SourceConfig(BUCKET, "scripts"));
         Map<String, Optional<Instant>> files = src.listFiles();
 
         assertFalse(files.containsKey(""));
@@ -152,7 +151,7 @@ class S3SourceTest {
         S3Client s3 = mock(S3Client.class);
         stubList(s3, s3obj("scripts/venv/lib.py"), s3obj("scripts/keep.py"));
 
-        S3Source src = new S3Source(s3, BUCKET, "scripts", null, new String[]{"venv"});
+        S3Source src = new S3Source(s3, new S3SourceConfig(BUCKET, "scripts", null, new String[]{"venv"}));
         Map<String, Optional<Instant>> files = src.listFiles();
 
         assertFalse(files.keySet().stream().anyMatch(k -> k.contains("venv")));
@@ -164,7 +163,7 @@ class S3SourceTest {
         S3Client s3 = mock(S3Client.class);
         stubList(s3, s3obj("scripts/transform.py"), s3obj("scripts/notes.txt"));
 
-        S3Source src = new S3Source(s3, BUCKET, "scripts", new String[]{"*.py"});
+        S3Source src = new S3Source(s3, new S3SourceConfig(BUCKET, "scripts", new String[]{"*.py"}));
         Map<String, Optional<Instant>> files = src.listFiles();
 
         assertTrue(files.containsKey("transform.py"));
@@ -177,7 +176,7 @@ class S3SourceTest {
         when(s3.listObjectsV2Paginator(any(ListObjectsV2Request.class)))
                 .thenThrow(S3Exception.builder().message("Access Denied").build());
 
-        S3Source src = new S3Source(s3, BUCKET, "scripts");
+        S3Source src = new S3Source(s3, new S3SourceConfig(BUCKET, "scripts"));
         assertThrows(IOException.class, src::listFiles);
     }
 
@@ -190,7 +189,7 @@ class S3SourceTest {
         S3Client s3 = mock(S3Client.class);
         stubGet(s3, BUCKET, "transform.py", "content");
 
-        S3Source src = new S3Source(s3, BUCKET, "");
+        S3Source src = new S3Source(s3, new S3SourceConfig(BUCKET, ""));
         src.readFile("transform.py");
 
         verify(s3).getObjectAsBytes(argThat((GetObjectRequest r) ->
@@ -202,7 +201,7 @@ class S3SourceTest {
         S3Client s3 = mock(S3Client.class);
         stubGet(s3, BUCKET, "scripts/transform.py", "content");
 
-        S3Source src = new S3Source(s3, BUCKET, "scripts");
+        S3Source src = new S3Source(s3, new S3SourceConfig(BUCKET, "scripts"));
         src.readFile("transform.py");
 
         verify(s3).getObjectAsBytes(argThat((GetObjectRequest r) ->
@@ -214,7 +213,7 @@ class S3SourceTest {
         S3Client s3 = mock(S3Client.class);
         stubGet(s3, BUCKET, "scripts/transform.py", "content");
 
-        S3Source src = new S3Source(s3, BUCKET, "scripts/"); // trailing slash
+        S3Source src = new S3Source(s3, new S3SourceConfig(BUCKET, "scripts/")); // trailing slash
         src.readFile("transform.py");
 
         verify(s3).getObjectAsBytes(argThat((GetObjectRequest r) ->
@@ -226,7 +225,7 @@ class S3SourceTest {
         S3Client s3 = mock(S3Client.class);
         stubGet(s3, BUCKET, "transform.py", "def process_element(line, out): pass\n");
 
-        S3Source src = new S3Source(s3, BUCKET, "");
+        S3Source src = new S3Source(s3, new S3SourceConfig(BUCKET, ""));
         String content = src.readFile("transform.py");
         assertEquals("def process_element(line, out): pass\n", content);
     }
@@ -237,7 +236,7 @@ class S3SourceTest {
         when(s3.getObjectAsBytes(any(GetObjectRequest.class)))
                 .thenThrow(S3Exception.builder().message("NoSuchKey").build());
 
-        S3Source src = new S3Source(s3, BUCKET, "");
+        S3Source src = new S3Source(s3, new S3SourceConfig(BUCKET, ""));
         assertThrows(IOException.class, () -> src.readFile("transform.py"));
     }
 }

@@ -20,6 +20,18 @@ public record S3SourceConfig(
         String[] filemasks, String[] excludeFilemasks
 ) implements FileSourceConfig {
 
+    public S3SourceConfig(String bucket, String prefix) {
+        this(bucket, prefix, null, null, null, null, null, null);
+    }
+
+    public S3SourceConfig(String bucket, String prefix, String[] filemasks) {
+        this(bucket, prefix, null, null, null, null, filemasks, null);
+    }
+
+    public S3SourceConfig(String bucket, String prefix, String[] filemasks, String[] excludeFilemasks) {
+        this(bucket, prefix, null, null, null, null, filemasks, excludeFilemasks);
+    }
+
     /**
      * AWS S3 with the default credential chain.
      */

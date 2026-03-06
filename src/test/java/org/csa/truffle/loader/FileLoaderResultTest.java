@@ -1,6 +1,7 @@
 package org.csa.truffle.loader;
 
 import org.csa.truffle.source.resource.ResourceSource;
+import org.csa.truffle.source.resource.ResourceSourceConfig;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -18,7 +19,7 @@ class FileLoaderResultTest {
 
     @Test
     void loadResult_success_isTrue() throws Exception {
-        try (FileLoader loader = new FileLoader(new ResourceSource("python_hr_v1"))) {
+        try (FileLoader loader = new FileLoader(new ResourceSource(new ResourceSourceConfig("python_hr_v1")))) {
             LoadResult result = loader.load();
             assertTrue(result.success());
         }
@@ -26,7 +27,7 @@ class FileLoaderResultTest {
 
     @Test
     void loadResult_success_containsExpectedFiles() throws Exception {
-        try (FileLoader loader = new FileLoader(new ResourceSource("python_hr_v1"))) {
+        try (FileLoader loader = new FileLoader(new ResourceSource(new ResourceSourceConfig("python_hr_v1")))) {
             LoadResult result = loader.load();
             assertNotNull(result.changes());
             List<String> names = result.changes().stream().map(LoadResult.FileChangeInfo::filePath).toList();
@@ -38,7 +39,7 @@ class FileLoaderResultTest {
 
     @Test
     void loadResult_success_errorIsNull() throws Exception {
-        try (FileLoader loader = new FileLoader(new ResourceSource("python_hr_v1"))) {
+        try (FileLoader loader = new FileLoader(new ResourceSource(new ResourceSourceConfig("python_hr_v1")))) {
             LoadResult result = loader.load();
             assertNull(result.error());
         }
@@ -46,7 +47,7 @@ class FileLoaderResultTest {
 
     @Test
     void loadResult_success_statusHasLastCheckedAt() throws Exception {
-        try (FileLoader loader = new FileLoader(new ResourceSource("python_hr_v1"))) {
+        try (FileLoader loader = new FileLoader(new ResourceSource(new ResourceSourceConfig("python_hr_v1")))) {
             LoadResult result = loader.load();
             assertNotNull(result.status().getLastCheckedAt());
         }
@@ -60,7 +61,7 @@ class FileLoaderResultTest {
     void loadResult_reloadedCallback_receivesFileContents() throws Exception {
         AtomicReference<List<LoadResult.FileChangeInfo>> received = new AtomicReference<>();
         FileLoader.ReloadCallback callback = (result) -> received.set(result.changes());
-        try (FileLoader loader = new FileLoader(new ResourceSource("python_hr_v1"), callback)) {
+        try (FileLoader loader = new FileLoader(new ResourceSource(new ResourceSourceConfig("python_hr_v1")), callback)) {
             loader.load();
             assertNotNull(received.get());
             assertTrue(received.get().stream().anyMatch(c -> c.filePath().equals("file_only_in_v1.py")));
@@ -71,7 +72,7 @@ class FileLoaderResultTest {
     void loadResult_reloadedCallback_receivesStatus() throws Exception {
         AtomicReference<FileLoaderStatus> received = new AtomicReference<>();
         FileLoader.ReloadCallback callback = (result) -> received.set(result.status());
-        try (FileLoader loader = new FileLoader(new ResourceSource("python_hr_v1"), callback)) {
+        try (FileLoader loader = new FileLoader(new ResourceSource(new ResourceSourceConfig("python_hr_v1")), callback)) {
             LoadResult result = loader.load();
             assertSame(result.status(), received.get());
         }
@@ -135,7 +136,7 @@ class FileLoaderResultTest {
             if (!result.success()) errorCalled.set(true);
         };
 
-        try (FileLoader loader = new FileLoader(new ResourceSource("python_hr_v1"), callback)) {
+        try (FileLoader loader = new FileLoader(new ResourceSource(new ResourceSourceConfig("python_hr_v1")), callback)) {
             loader.load();
             assertFalse(errorCalled.get());
         }

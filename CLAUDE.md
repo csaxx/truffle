@@ -65,7 +65,7 @@ Returns `GroovyCallable` (not `Value`) from `getMember`; returns `Object` (not `
 | Class | Config | Source |
 |---|---|---|
 | `ResourceSource` | `ResourceSourceConfig(dir, filemasks[], excludeFilemasks[])` | Classpath JAR |
-| `GitSource` | `GitSourceConfig(url, dir, branch, token, forge)` | GitHub / GitLab / Gitea via HTTP |
+| `GitSource` | `GitSourceConfig(url, dir, branch, token, forge[, filemasks[, excludeFilemasks[, apiBaseUrl]]])` | GitHub / GitLab / Gitea via HTTP |
 | `S3Source` | `S3SourceConfig.forAws(bucket, prefix)` / `.forMinio(...)` | AWS S3 / MinIO |
 | `FileSystemSource` | `FileSystemSourceConfig(path, watch)` | Local filesystem + WatchService |
 | `MapFileSource` | `MapFileSourceConfig(filemasks[])` | In-memory; `put/remove/triggerChange` |

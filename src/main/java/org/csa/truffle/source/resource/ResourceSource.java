@@ -30,18 +30,10 @@ public class ResourceSource implements FileSource {
     private final String[] filemasks;
     private final String[] excludeFilemasks;
 
-    public ResourceSource(String directory, String[] filemasks, String[] excludeFilemasks) {
-        this.directory = directory;
-        this.filemasks = filemasks;
-        this.excludeFilemasks = excludeFilemasks;
-    }
-
-    public ResourceSource(String directory, String[] filemasks) {
-        this(directory, filemasks, null);
-    }
-
-    public ResourceSource(String directory) {
-        this(directory, null, null);
+    public ResourceSource(ResourceSourceConfig config) {
+        this.directory = config.directory();
+        this.filemasks = config.filemasks();
+        this.excludeFilemasks = config.excludeFilemasks();
     }
 
     @Override

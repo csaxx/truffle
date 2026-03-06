@@ -3,6 +3,7 @@ package org.csa.truffle.source;
 import org.csa.truffle.loader.FileLoader;
 import org.csa.truffle.loader.LoadResult;
 import org.csa.truffle.source.map.MapFileSource;
+import org.csa.truffle.source.map.MapFileSourceConfig;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -17,13 +18,13 @@ class MapFileSourceTest {
 
     @Test
     void listFiles_emptySource_returnsEmpty() throws IOException {
-        MapFileSource src = new MapFileSource();
+        MapFileSource src = new MapFileSource(new MapFileSourceConfig());
         assertTrue(src.listFiles().isEmpty());
     }
 
     @Test
     void listFiles_returnsAddedFiles_alphabetically() throws IOException {
-        MapFileSource src = new MapFileSource();
+        MapFileSource src = new MapFileSource(new MapFileSourceConfig());
         src.put("zebra.py", "z");
         src.put("alpha.py", "a");
         src.put("middle.py", "m");
@@ -34,7 +35,7 @@ class MapFileSourceTest {
 
     @Test
     void listFiles_returnsTimestamps() throws IOException {
-        MapFileSource src = new MapFileSource();
+        MapFileSource src = new MapFileSource(new MapFileSourceConfig());
         src.put("script.py", "content");
 
         Map<String, Optional<Instant>> files = src.listFiles();
@@ -43,7 +44,7 @@ class MapFileSourceTest {
 
     @Test
     void listFiles_filemaskFiltersFiles() throws IOException {
-        MapFileSource src = new MapFileSource(new String[]{"*.py"});
+        MapFileSource src = new MapFileSource(new MapFileSourceConfig(new String[]{"*.py"}));
         src.put("transform.py", "py content");
         src.put("readme.txt", "text content");
 
@@ -54,7 +55,7 @@ class MapFileSourceTest {
 
     @Test
     void listFiles_excludeFilemaskExcludesFile() throws IOException {
-        MapFileSource src = new MapFileSource(null, new String[]{"excluded.py"});
+        MapFileSource src = new MapFileSource(new MapFileSourceConfig(null, new String[]{"excluded.py"}));
         src.put("keep.py", "keep");
         src.put("excluded.py", "excluded");
         src.put("also_keep.py", "also keep");
@@ -67,20 +68,20 @@ class MapFileSourceTest {
 
     @Test
     void readFile_returnsContent() throws IOException {
-        MapFileSource src = new MapFileSource();
+        MapFileSource src = new MapFileSource(new MapFileSourceConfig());
         src.put("script.py", "hello world");
         assertEquals("hello world", src.readFile("script.py"));
     }
 
     @Test
     void readFile_throwsOnMissingFile() {
-        MapFileSource src = new MapFileSource();
+        MapFileSource src = new MapFileSource(new MapFileSourceConfig());
         assertThrows(IOException.class, () -> src.readFile("nonexistent.py"));
     }
 
     @Test
     void put_overwritesExistingFile() throws IOException, InterruptedException {
-        MapFileSource src = new MapFileSource();
+        MapFileSource src = new MapFileSource(new MapFileSourceConfig());
         src.put("script.py", "v1");
         Instant first = src.listFiles().get("script.py").orElseThrow();
 
@@ -94,7 +95,7 @@ class MapFileSourceTest {
 
     @Test
     void remove_removesFile() throws IOException {
-        MapFileSource src = new MapFileSource();
+        MapFileSource src = new MapFileSource(new MapFileSourceConfig());
         src.put("script.py", "content");
         src.remove("script.py");
 
@@ -104,7 +105,7 @@ class MapFileSourceTest {
 
     @Test
     void triggerChange_callsListener() {
-        MapFileSource src = new MapFileSource();
+        MapFileSource src = new MapFileSource(new MapFileSourceConfig());
         AtomicInteger count = new AtomicInteger();
         src.setChangeListener(count::incrementAndGet);
 
@@ -115,13 +116,13 @@ class MapFileSourceTest {
 
     @Test
     void triggerChange_noListener_doesNotThrow() {
-        MapFileSource src = new MapFileSource();
+        MapFileSource src = new MapFileSource(new MapFileSourceConfig());
         assertDoesNotThrow(src::triggerChange);
     }
 
     @Test
     void put_doesNotAutoTrigger() {
-        MapFileSource src = new MapFileSource();
+        MapFileSource src = new MapFileSource(new MapFileSourceConfig());
         AtomicInteger count = new AtomicInteger();
         src.setChangeListener(count::incrementAndGet);
 
@@ -132,7 +133,7 @@ class MapFileSourceTest {
 
     @Test
     void remove_doesNotAutoTrigger() {
-        MapFileSource src = new MapFileSource();
+        MapFileSource src = new MapFileSource(new MapFileSourceConfig());
         src.put("script.py", "content");
         AtomicInteger count = new AtomicInteger();
         src.setChangeListener(count::incrementAndGet);
@@ -144,7 +145,7 @@ class MapFileSourceTest {
 
     @Test
     void integration_withFileLoader() throws Exception {
-        MapFileSource src = new MapFileSource(new String[]{"*.py"});
+        MapFileSource src = new MapFileSource(new MapFileSourceConfig(new String[]{"*.py"}));
         src.put("transform.py", "v1");
 
         AtomicInteger reloadCount = new AtomicInteger();

@@ -30,17 +30,9 @@ public class MapFileSource implements FileSource {
     private final String[] excludeFilemasks;
     private volatile Runnable changeListener;
 
-    public MapFileSource(String[] filemasks, String[] excludeFilemasks) {
-        this.filemasks = filemasks;
-        this.excludeFilemasks = excludeFilemasks;
-    }
-
-    public MapFileSource(String[] filemasks) {
-        this(filemasks, null);
-    }
-
-    public MapFileSource() {
-        this(null, null);
+    public MapFileSource(MapFileSourceConfig config) {
+        this.filemasks = config.filemasks();
+        this.excludeFilemasks = config.excludeFilemasks();
     }
 
     /**

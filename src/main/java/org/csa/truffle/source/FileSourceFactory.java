@@ -11,8 +11,6 @@ import org.csa.truffle.source.resource.ResourceSourceConfig;
 import org.csa.truffle.source.s3.S3Source;
 import org.csa.truffle.source.s3.S3SourceConfig;
 
-import java.nio.file.Path;
-
 public final class FileSourceFactory {
 
     private FileSourceFactory() {
@@ -21,22 +19,11 @@ public final class FileSourceFactory {
     public static FileSource create(FileSourceConfig config) {
 
         return switch (config) {
-            case ResourceSourceConfig c ->
-                    new ResourceSource(c.directory(), c.filemasks(), c.excludeFilemasks());
-
-            case GitSourceConfig c -> c.forge() != null
-                    ? new GitSource(c.repoUrl(), c.directory(), c.branch(), c.token(), c.forge(),
-                            c.filemasks(), c.excludeFilemasks())
-                    : new GitSource(c.repoUrl(), c.directory(), c.branch(), c.token(),
-                            GitSource.detectForge(c.repoUrl()), c.filemasks(), c.excludeFilemasks());
-
-            case FileSystemSourceConfig c ->
-                    new FileSystemSource(Path.of(c.directory()), c.watch(), c.filemasks(), c.excludeFilemasks());
-
+            case ResourceSourceConfig c -> new ResourceSource(c);
+            case GitSourceConfig c -> new GitSource(c);
+            case FileSystemSourceConfig c -> new FileSystemSource(c);
             case S3SourceConfig c -> new S3Source(c);
-
-            case MapFileSourceConfig c -> new MapFileSource(c.filemasks(), c.excludeFilemasks());
-
+            case MapFileSourceConfig c -> new MapFileSource(c);
             default -> throw new IllegalArgumentException(
                     "Unknown SourceConfig type: " + config.getClass().getName());
         };

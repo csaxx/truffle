@@ -1,6 +1,7 @@
 package org.csa.truffle.source;
 
 import org.csa.truffle.source.file.FileSystemSource;
+import org.csa.truffle.source.file.FileSystemSourceConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -39,7 +40,7 @@ class FileSystemSourceTest {
     void listFiles_returnsAllFilesAlphabetically() throws IOException {
         writePy("b.py", "");
         writePy("a.py", "");
-        FileSystemSource src = new FileSystemSource(tempDir, false);
+        FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), false));
         Map<String, Optional<Instant>> files = src.listFiles();
         assertIterableEquals(List.of("a.py", "b.py"), files.keySet());
     }
@@ -48,7 +49,7 @@ class FileSystemSourceTest {
     void listFiles_returnsAllFilesRecursively() throws IOException {
         writePy("top.py", "");
         writePy("sub/nested.py", "");
-        FileSystemSource src = new FileSystemSource(tempDir, false);
+        FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), false));
         Map<String, Optional<Instant>> files = src.listFiles();
         assertIterableEquals(List.of("sub/nested.py", "top.py"), files.keySet());
     }
@@ -57,7 +58,7 @@ class FileSystemSourceTest {
     void listFiles_skipsVenvDirectory() throws IOException {
         writePy("keep.py", "");
         writePy("venv/site-packages/lib.py", "");
-        FileSystemSource src = new FileSystemSource(tempDir, false, null, new String[]{"venv"});
+        FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), false, null, new String[]{"venv"}));
         Map<String, Optional<Instant>> files = src.listFiles();
         assertTrue(files.containsKey("keep.py"));
         assertFalse(files.keySet().stream().anyMatch(k -> k.contains("venv")));
@@ -67,7 +68,7 @@ class FileSystemSourceTest {
     void listFiles_excludeFilemaskExcludesSpecificFile() throws IOException {
         writePy("keep.py", "");
         writePy("excluded.py", "");
-        FileSystemSource src = new FileSystemSource(tempDir, false, null, new String[]{"excluded.py"});
+        FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), false, null, new String[]{"excluded.py"}));
         Map<String, Optional<Instant>> files = src.listFiles();
         assertTrue(files.containsKey("keep.py"));
         assertFalse(files.containsKey("excluded.py"));
@@ -77,7 +78,7 @@ class FileSystemSourceTest {
     void listFiles_filemaskFiltersExtension() throws IOException {
         writePy("a.py", "");
         Files.writeString(tempDir.resolve("notes.txt"), "ignored");
-        FileSystemSource src = new FileSystemSource(tempDir, false, new String[]{"*.py"});
+        FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), false, new String[]{"*.py"}));
         Map<String, Optional<Instant>> files = src.listFiles();
         assertTrue(files.containsKey("a.py"));
         assertFalse(files.containsKey("notes.txt"));
@@ -86,28 +87,28 @@ class FileSystemSourceTest {
     @Test
     void listFiles_returnsMtimeForExistingFiles() throws IOException {
         writePy("a.py", "content");
-        FileSystemSource src = new FileSystemSource(tempDir, false);
+        FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), false));
         Map<String, Optional<Instant>> files = src.listFiles();
         assertTrue(files.get("a.py").isPresent(), "mtime should be present for existing file");
     }
 
     @Test
     void listFiles_throwsWhenDirectoryMissing() {
-        FileSystemSource src = new FileSystemSource(tempDir.resolve("no_such_dir"), false);
+        FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.resolve("no_such_dir").toString(), false));
         assertThrows(IOException.class, src::listFiles);
     }
 
     @Test
     void readFile_returnsContent() throws IOException {
         writePy("transform.py", "def process_element(line, out): pass");
-        FileSystemSource src = new FileSystemSource(tempDir, false);
+        FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), false));
         String content = src.readFile("transform.py");
         assertEquals("def process_element(line, out): pass", content);
     }
 
     @Test
     void readFile_throwsOnMissingFile() {
-        FileSystemSource src = new FileSystemSource(tempDir, false);
+        FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), false));
         assertThrows(IOException.class, () -> src.readFile("no_such.py"));
     }
 
@@ -118,7 +119,7 @@ class FileSystemSourceTest {
     @Test
     void watch_false_setChangeListenerIsNoop() throws IOException {
         writePy("a.py", "");
-        FileSystemSource src = new FileSystemSource(tempDir, false);
+        FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), false));
         src.setChangeListener(() -> fail("should not be called"));
         boolean watcherExists = Thread.getAllStackTraces().keySet().stream()
                 .anyMatch(t -> t.getName().contains("FileSource-watcher"));
@@ -131,7 +132,7 @@ class FileSystemSourceTest {
         writePy("a.py", "v1");
 
         CountDownLatch latch = new CountDownLatch(1);
-        try (FileSystemSource src = new FileSystemSource(tempDir, true, new String[]{"*.py"})) {
+        try (FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), true, new String[]{"*.py"}))) {
             src.setChangeListener(latch::countDown);
             Thread.sleep(50); // let watcher register
             writePy("a.py", "v2");
@@ -144,7 +145,7 @@ class FileSystemSourceTest {
         writePy("sub/a.py", "v1");
 
         CountDownLatch latch = new CountDownLatch(1);
-        try (FileSystemSource src = new FileSystemSource(tempDir, true, new String[]{"*.py"})) {
+        try (FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), true, new String[]{"*.py"}))) {
             src.setChangeListener(latch::countDown);
             Thread.sleep(50);
             writePy("sub/a.py", "v2");
@@ -157,7 +158,7 @@ class FileSystemSourceTest {
         writePy("a.py", "v1");
 
         CountDownLatch latch = new CountDownLatch(1);
-        try (FileSystemSource src = new FileSystemSource(tempDir, true, new String[]{"*.py"})) {
+        try (FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), true, new String[]{"*.py"}))) {
             src.setChangeListener(latch::countDown);
             Thread.sleep(50);
             Files.writeString(tempDir.resolve("notes.txt"), "ignored");
@@ -171,7 +172,7 @@ class FileSystemSourceTest {
         writePy("a.py", "v1");
 
         CountDownLatch latch = new CountDownLatch(1);
-        try (FileSystemSource src = new FileSystemSource(tempDir, true, new String[]{"*.py"})) {
+        try (FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), true, new String[]{"*.py"}))) {
             src.setChangeListener(latch::countDown);
             src.setChangeListener(() -> fail("second listener should not replace first"));
             Thread.sleep(50);
@@ -184,7 +185,7 @@ class FileSystemSourceTest {
     void close_stopsWatcherThread() throws Exception {
         writePy("a.py", "v1");
 
-        FileSystemSource src = new FileSystemSource(tempDir, true);
+        FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), true));
         src.setChangeListener(() -> {});
         Thread.sleep(50);
 

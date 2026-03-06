@@ -70,16 +70,13 @@ public class S3Source implements FileSource {
                 config.filemasks(), config.excludeFilemasks());
     }
 
-    public S3Source(S3Client s3, String bucket, String prefix, String[] filemasks, String[] excludeFilemasks) {
-        this(s3, false, bucket, prefix, filemasks, excludeFilemasks);
-    }
-
-    public S3Source(S3Client s3, String bucket, String prefix, String[] filemasks) {
-        this(s3, false, bucket, prefix, filemasks, null);
-    }
-
-    public S3Source(S3Client s3, String bucket, String prefix) {
-        this(s3, false, bucket, prefix, null, null);
+    /**
+     * Constructs an {@code S3Source} with a pre-built {@link S3Client}.
+     * The client is <em>not</em> closed when this instance is closed.
+     * Intended for testing only (package-private).
+     */
+    S3Source(S3Client s3, S3SourceConfig config) {
+        this(s3, false, config.bucket(), config.prefix(), config.filemasks(), config.excludeFilemasks());
     }
 
     private S3Source(S3Client s3, boolean ownsClient, String bucket, String prefix,

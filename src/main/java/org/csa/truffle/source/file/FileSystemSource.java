@@ -38,19 +38,11 @@ public class FileSystemSource implements FileSource {
     private Thread watcherThread;
     private final Map<WatchKey, Path> watchedDirs = new ConcurrentHashMap<>();
 
-    public FileSystemSource(Path directory, boolean watch, String[] filemasks, String[] excludeFilemasks) {
-        this.directory = directory;
-        this.watch = watch;
-        this.filemasks = filemasks;
-        this.excludeFilemasks = excludeFilemasks;
-    }
-
-    public FileSystemSource(Path directory, boolean watch, String[] filemasks) {
-        this(directory, watch, filemasks, null);
-    }
-
-    public FileSystemSource(Path directory, boolean watch) {
-        this(directory, watch, null, null);
+    public FileSystemSource(FileSystemSourceConfig config) {
+        this.directory = Path.of(config.directory());
+        this.watch = config.watch();
+        this.filemasks = config.filemasks();
+        this.excludeFilemasks = config.excludeFilemasks();
     }
 
     @Override
