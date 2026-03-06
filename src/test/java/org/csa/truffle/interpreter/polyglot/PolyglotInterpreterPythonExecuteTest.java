@@ -9,7 +9,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import static org.junit.jupiter.api.Assertions.*;
 
-class PolyglotInterpreterExecuteTest {
+class PolyglotInterpreterPythonExecuteTest {
 
     static class TestCollector implements Collector<String> {
         final List<String> output = new ArrayList<>();

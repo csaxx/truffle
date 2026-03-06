@@ -156,6 +156,66 @@ changes are required and no `index.txt` entry is needed — files are auto-disco
 `ResourceSource`. The function receives the raw CSV line as a string and the Flink
 `Collector<String>`; call `out.collect(...)` to emit output rows.
 
+### GroovyInterpreter
+
+`GroovyInterpreter` (`src/main/java/org/csa/truffle/interpreter/GroovyInterpreter.java`)
+is the Groovy equivalent of `PolyglotInterpreter`. Groovy is not a Truffle language and
+cannot use the GraalVM polyglot API; it runs natively on the JVM via `groovy.lang.GroovyShell`.
+`GroovyInterpreter` provides the same conceptual API (named contexts, member lookup,
+execute/executeAll/present variants) adapted to Groovy's embedding model.
+
+**`GroovyCallable`** (`src/main/java/org/csa/truffle/interpreter/GroovyCallable.java`) is a
+`@FunctionalInterface` with `Object call(Object... args)`. It is the Groovy equivalent of
+`org.graalvm.polyglot.Value` as the return type of `getMember()`.
+
+**`GroovyScriptContext`** (`src/main/java/org/csa/truffle/interpreter/GroovyScriptContext.java`)
+wraps a compiled `Script` with a `Map<String, GroovyCallable>` member cache. Parallel to
+`PolyglotContext`. `getMember(String)` returns a cached lambda `args -> script.invokeMethod(name, args)`
+or throws `NoSuchElementException` if absent. `hasMember()` primes the cache on a hit.
+`getMembers()` returns the names of all user-defined methods by inspecting
+`script.getClass().getDeclaredMethods()` with filters: `isPublic`, `!isSynthetic`, `!isBridge`,
+`!name.equals("run")`, `!name.contains("$")` (excludes the script body and Groovy-generated helpers).
+`close()` clears the member cache.
+
+**Constructor.**
+```java
+new GroovyInterpreter()
+```
+Call `addContext(String name, String content)` to load each source. No `TruffleLanguage`
+parameter — always Groovy.
+
+**`addContext(name, content)`** — `shell.parse(content, name)` compiles the script; `script.run()`
+executes the top-level body (equivalent to `context.eval()`); then stores a `GroovyScriptContext`.
+Throws `IllegalArgumentException` on duplicate name. Parse/eval errors surface as unchecked
+`GroovyRuntimeException` — no `throws Exception` needed.
+
+**`reset()`** — closes all contexts, clears the map, then `shell = new GroovyShell(new Binding())`.
+Recreating the shell prevents the internal `GroovyClassLoader` from accumulating stale class
+definitions across reload cycles (important for long-running `ScheduledReloader` use).
+
+**API — differences from `PolyglotInterpreter`:**
+
+| PolyglotInterpreter | GroovyInterpreter |
+|---|---|
+| `addContext(TruffleLanguage, String, String)` | `addContext(String, String)` — no language param |
+| `getMember(...) → Value` | `getMember(...) → GroovyCallable` |
+| `getMembers(...) → Map<String, Value>` | `getMembers(...) → Map<String, GroovyCallable>` |
+| `execute(...) → Value` | `execute(...) → Object` |
+| `executeAll(...) → Map<String, Value>` | `executeAll(...) → Map<String, Object>` |
+| `canExecute(...)` — checks `Value.canExecute()` | `canExecute(...)` — always `true` if member exists; throws `NoSuchElementException` if absent |
+| `closeSharedEngines()` (static) | *(omitted — no static shared state)* |
+
+`executeVoid`, `executeAllVoid`, `executeAllPresent`, `executeAllVoidPresent` — identical
+semantics to their `PolyglotInterpreter` counterparts.
+
+**Tests.**
+- `GroovyInterpreterLoadTest` (13 tests) — mirrors `PolyglotInterpreterLoadTest`; includes
+  `assertFalse(names.contains("run"))` in `getMemberNames` to validate the method filter.
+- `GroovyInterpreterExecuteTest` (11 tests) — mirrors `PolyglotInterpreterExecuteTest`;
+  `canExecute_nonCallable_returnsFalse` has no Groovy equivalent (all discovered members are
+  methods) and is replaced by `canExecute_missingMember_throwsNoSuchElementException`;
+  `executeAllPresent_skipsContextsWithoutMember` is added to cover skip-on-absent behavior.
+
 ### FileSource implementations
 
 These classes (in `org.csa.truffle.source`) are used by `ProcessFunctionPython` via

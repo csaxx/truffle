@@ -49,6 +49,14 @@
       <type>pom</type>
     </dependency>
 
+    <!-- GraalJS community runtime — POM type imports all GraalJS JARs transitively -->
+    <dependency>
+      <groupId>org.graalvm.polyglot</groupId>
+      <artifactId>js-community</artifactId>
+      <version>${graalvm.polyglot.version}</version>
+      <type>pom</type>
+    </dependency>
+
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>s3</artifactId>
