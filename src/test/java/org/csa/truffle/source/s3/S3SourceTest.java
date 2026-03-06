@@ -151,7 +151,7 @@ class S3SourceTest {
         S3Client s3 = mock(S3Client.class);
         stubList(s3, s3obj("scripts/venv/lib.py"), s3obj("scripts/keep.py"));
 
-        S3Source src = new S3Source(s3, new S3SourceConfig(BUCKET, "scripts", null, new String[]{"venv"}));
+        S3Source src = new S3Source(s3, new S3SourceConfig(BUCKET, "scripts", null, null, null, null, null, new String[]{"venv"}));
         Map<String, Optional<Instant>> files = src.listFiles();
 
         assertFalse(files.keySet().stream().anyMatch(k -> k.contains("venv")));
@@ -163,7 +163,7 @@ class S3SourceTest {
         S3Client s3 = mock(S3Client.class);
         stubList(s3, s3obj("scripts/transform.py"), s3obj("scripts/notes.txt"));
 
-        S3Source src = new S3Source(s3, new S3SourceConfig(BUCKET, "scripts", new String[]{"*.py"}));
+        S3Source src = new S3Source(s3, new S3SourceConfig(BUCKET, "scripts", null, null, null, null, new String[]{"*.py"}, null));
         Map<String, Optional<Instant>> files = src.listFiles();
 
         assertTrue(files.containsKey("transform.py"));

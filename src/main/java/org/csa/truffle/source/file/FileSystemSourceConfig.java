@@ -15,8 +15,4 @@ public record FileSystemSourceConfig(String directory, boolean watch, String[] f
     public FileSystemSourceConfig(String directory, boolean watch) {
         this(directory, watch, null, null);
     }
-
-    public FileSystemSourceConfig(String directory, boolean watch, String[] filemasks) {
-        this(directory, watch, filemasks, null);
-    }
 }

@@ -24,19 +24,19 @@ public record S3SourceConfig(
         this(bucket, prefix, null, null, null, null, null, null);
     }
 
-    public S3SourceConfig(String bucket, String prefix, String[] filemasks) {
-        this(bucket, prefix, null, null, null, null, filemasks, null);
-    }
-
-    public S3SourceConfig(String bucket, String prefix, String[] filemasks, String[] excludeFilemasks) {
-        this(bucket, prefix, null, null, null, null, filemasks, excludeFilemasks);
-    }
-
     /**
      * AWS S3 with the default credential chain.
      */
     public static S3SourceConfig forAws(String bucket, String prefix) {
         return new S3SourceConfig(bucket, prefix, null, null, null, null, null, null);
+    }
+
+    /**
+     * AWS S3 with explicit region and credentials.
+     */
+    public static S3SourceConfig forAws(String bucket, String prefix,
+                                        String region, String accessKeyId, String secretKey) {
+        return new S3SourceConfig(bucket, prefix, region, null, accessKeyId, secretKey, null, null);
     }
 
     /**

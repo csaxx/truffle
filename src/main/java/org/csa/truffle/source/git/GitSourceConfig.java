@@ -25,13 +25,34 @@ public record GitSourceConfig(
         this(repoUrl, directory, branch, token, forge, null, null, null);
     }
 
-    public GitSourceConfig(String repoUrl, String directory, String branch,
-                           String token, GitForgeType forge, String[] filemasks) {
-        this(repoUrl, directory, branch, token, forge, filemasks, null, null);
+    // -------------------------------------------------------------------------
+    // Factory methods
+    // -------------------------------------------------------------------------
+
+    public static GitSourceConfig forGitHub(String repoUrl, String directory, String branch, String token) {
+        return new GitSourceConfig(repoUrl, directory, branch, token, GitForgeType.GITHUB);
     }
 
-    public GitSourceConfig(String repoUrl, String directory, String branch,
-                           String token, GitForgeType forge, String[] filemasks, String[] excludeFilemasks) {
-        this(repoUrl, directory, branch, token, forge, filemasks, excludeFilemasks, null);
+    public static GitSourceConfig forGitHub(String repoUrl, String directory, String branch, String token,
+                                            String[] filemasks, String[] excludeFilemasks) {
+        return new GitSourceConfig(repoUrl, directory, branch, token, GitForgeType.GITHUB, filemasks, excludeFilemasks, null);
+    }
+
+    public static GitSourceConfig forGitLab(String repoUrl, String directory, String branch, String token) {
+        return new GitSourceConfig(repoUrl, directory, branch, token, GitForgeType.GITLAB);
+    }
+
+    public static GitSourceConfig forGitLab(String repoUrl, String directory, String branch, String token,
+                                            String[] filemasks, String[] excludeFilemasks) {
+        return new GitSourceConfig(repoUrl, directory, branch, token, GitForgeType.GITLAB, filemasks, excludeFilemasks, null);
+    }
+
+    public static GitSourceConfig forGitea(String repoUrl, String directory, String branch, String token) {
+        return new GitSourceConfig(repoUrl, directory, branch, token, GitForgeType.GITEA);
+    }
+
+    public static GitSourceConfig forGitea(String repoUrl, String directory, String branch, String token,
+                                           String[] filemasks, String[] excludeFilemasks) {
+        return new GitSourceConfig(repoUrl, directory, branch, token, GitForgeType.GITEA, filemasks, excludeFilemasks, null);
     }
 }

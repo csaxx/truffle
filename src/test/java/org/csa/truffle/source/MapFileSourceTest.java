@@ -44,7 +44,7 @@ class MapFileSourceTest {
 
     @Test
     void listFiles_filemaskFiltersFiles() throws IOException {
-        MapFileSource src = new MapFileSource(new MapFileSourceConfig(new String[]{"*.py"}));
+        MapFileSource src = new MapFileSource(new MapFileSourceConfig(new String[]{"*.py"}, null));
         src.put("transform.py", "py content");
         src.put("readme.txt", "text content");
 
@@ -145,7 +145,7 @@ class MapFileSourceTest {
 
     @Test
     void integration_withFileLoader() throws Exception {
-        MapFileSource src = new MapFileSource(new MapFileSourceConfig(new String[]{"*.py"}));
+        MapFileSource src = new MapFileSource(new MapFileSourceConfig(new String[]{"*.py"}, null));
         src.put("transform.py", "v1");
 
         AtomicInteger reloadCount = new AtomicInteger();

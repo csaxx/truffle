@@ -14,8 +14,4 @@ public record MapFileSourceConfig(String[] filemasks, String[] excludeFilemasks)
     public MapFileSourceConfig() {
         this(null, null);
     }
-
-    public MapFileSourceConfig(String[] filemasks) {
-        this(filemasks, null);
-    }
 }

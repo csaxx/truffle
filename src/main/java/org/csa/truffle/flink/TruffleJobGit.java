@@ -22,13 +22,13 @@ public class TruffleJobGit {
     private static final Logger log = LoggerFactory.getLogger(TruffleJobGit.class);
 
     public static void main(String[] args) throws Exception {
-        GitSourceConfig gitConfig = new GitSourceConfig(
+        GitSourceConfig gitConfig = GitSourceConfig.forGitHub(
                 "https://github.com/csaxx/truffle",
                 "src/main/resources/python",
                 "master",
                 null,                    // public repo — no token needed
-                null,                    // auto-detect forge from URL
-                new String[]{"*.py"}     // only load Python files
+                new String[]{"*.py"},    // only load Python files
+                null
         );
 
         log.info("Loading CSV resources");

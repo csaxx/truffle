@@ -8,8 +8,4 @@ public record ResourceSourceConfig(String directory, String[] filemasks, String[
     public ResourceSourceConfig(String directory) {
         this(directory, null, null);
     }
-
-    public ResourceSourceConfig(String directory, String[] filemasks) {
-        this(directory, filemasks, null);
-    }
 }

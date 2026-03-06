@@ -78,7 +78,7 @@ class FileSystemSourceTest {
     void listFiles_filemaskFiltersExtension() throws IOException {
         writePy("a.py", "");
         Files.writeString(tempDir.resolve("notes.txt"), "ignored");
-        FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), false, new String[]{"*.py"}));
+        FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), false, new String[]{"*.py"}, null));
         Map<String, Optional<Instant>> files = src.listFiles();
         assertTrue(files.containsKey("a.py"));
         assertFalse(files.containsKey("notes.txt"));
@@ -132,7 +132,7 @@ class FileSystemSourceTest {
         writePy("a.py", "v1");
 
         CountDownLatch latch = new CountDownLatch(1);
-        try (FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), true, new String[]{"*.py"}))) {
+        try (FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), true, new String[]{"*.py"}, null))) {
             src.setChangeListener(latch::countDown);
             Thread.sleep(50); // let watcher register
             writePy("a.py", "v2");
@@ -145,7 +145,7 @@ class FileSystemSourceTest {
         writePy("sub/a.py", "v1");
 
         CountDownLatch latch = new CountDownLatch(1);
-        try (FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), true, new String[]{"*.py"}))) {
+        try (FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), true, new String[]{"*.py"}, null))) {
             src.setChangeListener(latch::countDown);
             Thread.sleep(50);
             writePy("sub/a.py", "v2");
@@ -158,7 +158,7 @@ class FileSystemSourceTest {
         writePy("a.py", "v1");
 
         CountDownLatch latch = new CountDownLatch(1);
-        try (FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), true, new String[]{"*.py"}))) {
+        try (FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), true, new String[]{"*.py"}, null))) {
             src.setChangeListener(latch::countDown);
             Thread.sleep(50);
             Files.writeString(tempDir.resolve("notes.txt"), "ignored");
@@ -172,7 +172,7 @@ class FileSystemSourceTest {
         writePy("a.py", "v1");
 
         CountDownLatch latch = new CountDownLatch(1);
-        try (FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), true, new String[]{"*.py"}))) {
+        try (FileSystemSource src = new FileSystemSource(new FileSystemSourceConfig(tempDir.toString(), true, new String[]{"*.py"}, null))) {
             src.setChangeListener(latch::countDown);
             src.setChangeListener(() -> fail("second listener should not replace first"));
             Thread.sleep(50);
