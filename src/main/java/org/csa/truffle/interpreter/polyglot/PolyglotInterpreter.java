@@ -2,6 +2,9 @@ package org.csa.truffle.interpreter.polyglot;
 
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
+import org.graalvm.polyglot.HostAccess;
+import org.graalvm.polyglot.io.IOAccess;
+import org.graalvm.polyglot.PolyglotAccess;
 import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.Value;
 import org.slf4j.Logger;
@@ -87,7 +90,12 @@ public class PolyglotInterpreter implements AutoCloseable {
 
         return Context.newBuilder(language.getId())
                 .engine(engine)
-                .allowAllAccess(true)   // scripts are trusted internal transforms; full host access is intentional
+                .allowHostAccess(HostAccess.ALL)          // scripts call out.collect() on Flink Collector
+                .allowHostClassLookup(s -> false)         // no Java.type() calls in any script
+                .allowIO(IOAccess.NONE)                   // no file I/O; pure in-memory transforms
+                .allowNativeAccess(false)                 // no ctypes or native libraries
+                .allowCreateThread(false)                 // no threading in transform scripts
+                .allowPolyglotAccess(PolyglotAccess.NONE) // no cross-language eval
                 .build();
     }
 
