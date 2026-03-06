@@ -213,11 +213,20 @@ public class ScheduledReloader implements AutoCloseable {
     // Close
     // -------------------------------------------------------------------------
 
-    @Override
-    public void close() {
+    /**
+     * Stops the background scheduler without closing the underlying {@link FileLoader}.
+     * Safe to call multiple times.
+     */
+    public void stop() {
         if (executor != null) {
             executor.shutdownNow();
+            executor = null;
         }
+    }
+
+    @Override
+    public void close() {
+        stop();
 
         try {
             loader.close();
