@@ -87,24 +87,33 @@ public class FileLoader implements Closeable {
     // -------------------------------------------------------------------------
 
     /**
+     * Convenience overload; delegates to {@link #load(boolean) load(false)}.
+     */
+    public synchronized LoadResult load() {
+        return load(false);
+    }
+
+    /**
      * Loads or refreshes file contents from the source.
      *
      * <p>For each file returned by {@link FileSource#listFiles()}:
      * <ul>
-     *   <li>If a modification time is present and has not advanced since the
-     *       last load, the cached content is reused without an I/O call.</li>
+     *   <li>If {@code force} is {@code false} and a modification time is present
+     *       and has not advanced since the last load, the cached content is reused
+     *       without an I/O call.</li>
      *   <li>Otherwise the file is re-read via {@link FileSource#readFile}.</li>
      * </ul>
-     * Files no longer listed in {@code index.txt} are evicted from the cache.
+     * Files no longer listed by the source are evicted from the cache.
      *
      * <p>{@link FileLoaderStatus} is updated on every call regardless of outcome.
      * This method never throws; I/O errors are captured in the returned
      * {@link LoadResult} and forwarded to the {@link ReloadCallback} (if set).
      *
+     * @param force when {@code true}, re-reads every file regardless of modification time
      * @return a {@link LoadResult} describing the outcome; success is
      * {@code true} when no I/O error occurred
      */
-    public synchronized LoadResult load() {
+    public synchronized LoadResult load(boolean force) {
 
         Instant checkedAt = Instant.now();
         status.lastCheckedAt = checkedAt;
@@ -124,11 +133,11 @@ public class FileLoader implements Closeable {
                 String filePath = entry.getKey();
                 Optional<Instant> modTime = entry.getValue();
 
-                // file needs to be (re)read if it is newer or has no modification time
+                // file needs to be (re)read if forced, newer, or has no modification time
                 boolean needsRead;
                 if (modTime.isPresent()) {
                     Instant lastKnown = modTimes.get(filePath);
-                    needsRead = lastKnown == null || modTime.get().isAfter(lastKnown);
+                    needsRead = force || lastKnown == null || modTime.get().isAfter(lastKnown);
                     newModTimes.put(filePath, modTime.get());
                 } else {
                     needsRead = true; // no timestamp available — always re-read
