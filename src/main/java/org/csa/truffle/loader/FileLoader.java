@@ -1,6 +1,9 @@
 package org.csa.truffle.loader;
 
 import org.apache.commons.lang3.StringUtils;
+import org.csa.truffle.loader.result.FileInfo;
+import org.csa.truffle.loader.result.ChangeStatus;
+import org.csa.truffle.loader.result.LoadResult;
 import org.csa.truffle.source.FileSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -78,7 +81,7 @@ public class FileLoader implements Closeable {
         this.source = source;
         this.callback = callback;
 
-        // source may provide a callback when input changes
+        // source may provide a callback when input files
         source.setChangeListener(this::load);
     }
 
@@ -125,7 +128,7 @@ public class FileLoader implements Closeable {
 
             boolean changed = false;
 
-            List<LoadResult.FileChangeInfo> changes = new ArrayList<>();
+            List<FileInfo> changes = new ArrayList<>();
             Map<String, String> newFileContents = new LinkedHashMap<>();
             Map<String, Instant> newModTimes = new HashMap<>();
 
@@ -144,38 +147,38 @@ public class FileLoader implements Closeable {
                 }
 
                 // read file (if necessary) and get contents
-                LoadResult.ChangeStatus changeStatus;
+                ChangeStatus changeStatus;
                 String content;
                 if (needsRead) {
                     content = source.readFile(filePath);
                     String previous = fileContents.get(filePath);
                     if (previous == null) {
-                        changeStatus = LoadResult.ChangeStatus.ADDED;
+                        changeStatus = ChangeStatus.ADDED;
                         log.info("New file loaded: {}", filePath);
                         changed = true;
                     } else if (!StringUtils.equals(content, previous)) {
-                        changeStatus = LoadResult.ChangeStatus.MODIFIED;
+                        changeStatus = ChangeStatus.MODIFIED;
                         log.info("File content updated: {}", filePath);
                         changed = true;
                     } else {
-                        changeStatus = LoadResult.ChangeStatus.UNMODIFIED;
+                        changeStatus = ChangeStatus.UNMODIFIED;
                         log.debug("File re-read but unchanged: {}", filePath);
                     }
                 } else {
                     content = fileContents.get(filePath); // reuse from cache
-                    changeStatus = LoadResult.ChangeStatus.UNMODIFIED;
+                    changeStatus = ChangeStatus.UNMODIFIED;
                     log.debug("Skipped unchanged file (modTime): {}", filePath);
                 }
 
                 newFileContents.put(filePath, content);
-                changes.add(new LoadResult.FileChangeInfo(filePath, modTime, changeStatus));
+                changes.add(new FileInfo(filePath, modTime, changeStatus));
             }
 
             // Detect removed files
             for (String filePath : fileContents.keySet()) {
                 if (!newFileContents.containsKey(filePath)) {
                     log.info("File removed from index: {}", filePath);
-                    changes.add(new LoadResult.FileChangeInfo(filePath, Optional.empty(), LoadResult.ChangeStatus.REMOVED));
+                    changes.add(new FileInfo(filePath, Optional.empty(), ChangeStatus.REMOVED));
                     changed = true;
                 }
             }
@@ -196,7 +199,7 @@ public class FileLoader implements Closeable {
                 status.lastChangedAt = checkedAt;
                 log.debug("load() complete: change(s) detected");
             } else {
-                log.debug("load() complete: no changes");
+                log.debug("load() complete: no files");
             }
 
             status.lastSuccessAt = checkedAt;
@@ -204,7 +207,7 @@ public class FileLoader implements Closeable {
             status.loadedFiles = Set.copyOf(newFileContents.keySet());
             status.firstErrorAt = null;  // clear error streak on success
 
-            result = new LoadResult(status, List.copyOf(changes), Map.copyOf(newFileContents));
+            result = LoadResult.forSuccess(status, changed, List.copyOf(changes), Map.copyOf(newFileContents));
 
         } catch (Exception e) {
 
@@ -217,7 +220,7 @@ public class FileLoader implements Closeable {
                 status.firstErrorAt = checkedAt;
             }
 
-            result = new LoadResult(status, e);
+            result = LoadResult.forError(status, e);
         }
 
         if (callback != null) {

@@ -116,7 +116,12 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
     public void processElement(String line, Context ctx, Collector<String> out) {
 
         // check for exception in scheduler
-        scheduler.checkForFatalError();
+        try {
+            scheduler.checkForFatalError();
+        } catch (Throwable e){
+            log.error("Aborting job due to fatal scheduler error");
+            throw e;
+        }
 
         for (String file : interpreter.getContexts()) {
             try {

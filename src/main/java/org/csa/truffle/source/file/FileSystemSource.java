@@ -17,7 +17,7 @@ import java.util.stream.Stream;
 
 /**
  * {@link FileSource} that auto-discovers files by walking a local directory and
- * watches it recursively for changes via {@link WatchService}.
+ * watches it recursively for files via {@link WatchService}.
  *
  * <p>Files matching any {@code excludeFilemasks} pattern (matched against each path component)
  * are excluded. Each of the {@code filemasks} globs is matched against the filename (last path

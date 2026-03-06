@@ -27,7 +27,7 @@ class ScheduledReloaderTest {
 
     @Test
     void lastChangedAt_setWhenDataChanges() throws Exception {
-        // First load always produces changes (new files are loaded)
+        // First load always produces files (new files are loaded)
         try (ScheduledReloader reloader = new ScheduledReloader(
                 new ResourceSourceConfig("python_hr_v1"), INTERVAL, PolyglotContextConfig.MINIMAL, (status, interp) -> {
         })) {
@@ -46,13 +46,13 @@ class ScheduledReloaderTest {
                 })) {
             reloader.start();
             Instant changedAfterInit = reloader.getStatus().getLastChangedAt();
-            assertNotNull(changedAfterInit, "initial load always detects changes");
+            assertNotNull(changedAfterInit, "initial load always detects files");
             Instant checkedAfterInit = reloader.getStatus().getLastCheckedAt();
-            Thread.sleep(200);   // several background ticks, same source = no changes
+            Thread.sleep(200);   // several background ticks, same source = no files
             assertEquals(changedAfterInit, reloader.getStatus().getLastChangedAt(),
                     "lastChangedAt should not advance when source is unchanged");
             assertTrue(reloader.getStatus().getLastCheckedAt().isAfter(checkedAfterInit),
-                    "lastCheckedAt should advance even without changes");
+                    "lastCheckedAt should advance even without files");
         }
     }
 

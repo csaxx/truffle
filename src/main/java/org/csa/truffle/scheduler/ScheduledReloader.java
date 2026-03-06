@@ -5,7 +5,7 @@ import org.csa.truffle.interpreter.polyglot.PolyglotInterpreter;
 import org.csa.truffle.interpreter.polyglot.TruffleLanguage;
 import org.csa.truffle.loader.FileLoader;
 import org.csa.truffle.loader.FileLoaderStatus;
-import org.csa.truffle.loader.LoadResult;
+import org.csa.truffle.loader.result.LoadResult;
 import org.csa.truffle.source.FileSource;
 import org.csa.truffle.source.FileSourceConfig;
 import org.csa.truffle.source.FileSourceFactory;
@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
  * Performs an initial synchronous reload then schedules periodic background reloads
  * at the configured interval.
  *
- * <p>A new {@link PolyglotInterpreter} is built whenever the loader detects content changes.
+ * <p>A new {@link PolyglotInterpreter} is built whenever the loader detects content files.
  * Observable status is accessible via {@link #getStatus()} and backed by {@link FileLoaderStatus}.
  *
  * <p>Thread-safety: {@code fatalError} and {@code firstErrorAt} are {@code volatile} — writes
@@ -86,15 +86,19 @@ public class ScheduledReloader implements AutoCloseable {
      * then schedules periodic background reloads at the configured interval.
      */
     public void start() throws IOException {
-        doReload();   // synchronous initial load
 
+        // synchronous initial load
+        doReload();
+
+        // init scheduler
         long interval = schedulerConfig.interval().toMillis();
         executor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "ScheduledReloader");
             t.setDaemon(true);
             return t;
         });
-        executor.scheduleAtFixedRate(this::doReloadQuietly, interval, interval, TimeUnit.MILLISECONDS);
+
+        executor.scheduleAtFixedRate(this::doScheduledReload, interval, interval, TimeUnit.MILLISECONDS);
 
         log.info("ScheduledReloader started");
     }
@@ -111,10 +115,7 @@ public class ScheduledReloader implements AutoCloseable {
             throw new IOException("FileLoader failed: " + result.error().getMessage(), result.error());
         }
 
-        boolean hasChanged = result.changes().stream()
-                .anyMatch(c -> c.status() != LoadResult.ChangeStatus.UNMODIFIED);
-
-        if (hasChanged) {
+        if (result.changed()) {
 
             try {
                 PolyglotInterpreter interpreter = new PolyglotInterpreter(contextConfig);
@@ -138,7 +139,7 @@ public class ScheduledReloader implements AutoCloseable {
         firstErrorAt = null;
     }
 
-    private void doReloadQuietly() {
+    private void doScheduledReload() {
 
         try {
             doReload();

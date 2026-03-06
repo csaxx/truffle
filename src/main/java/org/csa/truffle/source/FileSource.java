@@ -30,7 +30,7 @@ public interface FileSource extends Closeable {
 
     /**
      * Must be called after construction.
-     * Implementations that can detect changes (e.g. {@link FileSystemSource})
+     * Implementations that can detect files (e.g. {@link FileSystemSource})
      * store the callback and invoke it when a change is detected.
      * The default is a no-op (pull-only sources ignore it).
      */

@@ -1,5 +1,7 @@
 package org.csa.truffle.loader;
 
+import org.csa.truffle.loader.result.FileInfo;
+import org.csa.truffle.loader.result.LoadResult;
 import org.csa.truffle.source.resource.ResourceSource;
 import org.csa.truffle.source.resource.ResourceSourceConfig;
 import org.junit.jupiter.api.Test;
@@ -29,8 +31,8 @@ class FileLoaderResultTest {
     void loadResult_success_containsExpectedFiles() throws Exception {
         try (FileLoader loader = new FileLoader(new ResourceSource(new ResourceSourceConfig("python_hr_v1")))) {
             LoadResult result = loader.load();
-            assertNotNull(result.changes());
-            List<String> names = result.changes().stream().map(LoadResult.FileChangeInfo::filePath).toList();
+            assertNotNull(result.files());
+            List<String> names = result.files().stream().map(FileInfo::filePath).toList();
             assertTrue(names.contains("file_only_in_v1.py"));
             assertTrue(names.contains("file_in_both_unchanged.py"));
             assertTrue(names.contains("file_in_both_changed.py"));
@@ -59,8 +61,8 @@ class FileLoaderResultTest {
 
     @Test
     void loadResult_reloadedCallback_receivesFileContents() throws Exception {
-        AtomicReference<List<LoadResult.FileChangeInfo>> received = new AtomicReference<>();
-        FileLoader.ReloadCallback callback = (result) -> received.set(result.changes());
+        AtomicReference<List<FileInfo>> received = new AtomicReference<>();
+        FileLoader.ReloadCallback callback = (result) -> received.set(result.files());
         try (FileLoader loader = new FileLoader(new ResourceSource(new ResourceSourceConfig("python_hr_v1")), callback)) {
             loader.load();
             assertNotNull(received.get());
@@ -103,7 +105,7 @@ class FileLoaderResultTest {
     void loadResult_error_fileContentsIsNull() throws Exception {
         try (FileLoader loader = new FileLoader(new FileLoaderTest.FailingSource())) {
             LoadResult result = loader.load();
-            assertNull(result.changes());
+            assertNull(result.files());
         }
     }
 

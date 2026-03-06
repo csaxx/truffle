@@ -1,5 +1,7 @@
 package org.csa.truffle.loader;
 
+import org.csa.truffle.loader.result.ChangeStatus;
+import org.csa.truffle.loader.result.LoadResult;
 import org.csa.truffle.source.FileSource;
 import org.junit.jupiter.api.Test;
 
@@ -226,7 +228,7 @@ class FileLoaderTest {
             src.switchTo("python_hr_v2");
             LoadResult result = loader.load();
             assertTrue(result.success());
-            assertTrue(result.changes().stream().anyMatch(c -> c.status() != LoadResult.ChangeStatus.UNMODIFIED));
+            assertTrue(result.files().stream().anyMatch(c -> c.status() != ChangeStatus.UNMODIFIED));
             assertTrue(loader.getStatus().getLastChangedAt().isAfter(firstChangedAt));
         }
     }
@@ -239,7 +241,7 @@ class FileLoaderTest {
             Instant firstChangedAt = loader.getStatus().getLastChangedAt();
             LoadResult result = loader.load();
             assertTrue(result.success());
-            assertTrue(result.changes().stream().allMatch(c -> c.status() == LoadResult.ChangeStatus.UNMODIFIED));
+            assertTrue(result.files().stream().allMatch(c -> c.status() == ChangeStatus.UNMODIFIED));
             assertEquals(firstChangedAt, loader.getStatus().getLastChangedAt());
         }
     }
@@ -261,7 +263,7 @@ class FileLoaderTest {
     void status_lastChangedAt_setWhenChanges() throws Exception {
         try (FileLoader loader = new FileLoader(new SwitchableFileSource("python_hr_v1"))) {
             loader.load();
-            // First load always changes (all files are new)
+            // First load always files (all files are new)
             assertNotNull(loader.getStatus().getLastChangedAt());
         }
     }
@@ -271,7 +273,7 @@ class FileLoaderTest {
         try (FileLoader loader = new FileLoader(new SwitchableFileSource("python_hr_v1"))) {
             loader.load();
             Instant afterFirst = loader.getStatus().getLastChangedAt();
-            loader.load(); // no changes
+            loader.load(); // no files
             assertEquals(afterFirst, loader.getStatus().getLastChangedAt());
         }
     }
@@ -336,7 +338,7 @@ class FileLoaderTest {
         try (FileLoader loader = new FileLoader(src, callback)) {
             loader.load();
             assertEquals(1, count.get());
-            loader.load(); // no changes — reloaded() still fires
+            loader.load(); // no files — reloaded() still fires
             assertEquals(2, count.get());
         }
     }

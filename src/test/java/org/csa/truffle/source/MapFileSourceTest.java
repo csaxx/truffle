@@ -1,7 +1,7 @@
 package org.csa.truffle.source;
 
 import org.csa.truffle.loader.FileLoader;
-import org.csa.truffle.loader.LoadResult;
+import org.csa.truffle.loader.result.LoadResult;
 import org.csa.truffle.source.map.MapFileSource;
 import org.csa.truffle.source.map.MapFileSourceConfig;
 import org.junit.jupiter.api.Test;

@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Call {@link #triggerChange()} to explicitly push a reload notification.
  *
  * <p>Timestamps are recorded at each {@link #put} call so {@code FileLoader}
- * can detect changes efficiently.
+ * can detect files efficiently.
  */
 public class MapFileSource implements FileSource {
 
