@@ -1,5 +1,6 @@
 package org.csa.truffle.scheduler;
 
+import org.csa.truffle.interpreter.polyglot.PolyglotContextConfig;
 import org.csa.truffle.interpreter.polyglot.PolyglotInterpreter;
 import org.csa.truffle.interpreter.polyglot.TruffleLanguage;
 import org.csa.truffle.loader.FileLoader;
@@ -45,6 +46,7 @@ public class ScheduledReloader implements AutoCloseable {
 
     private final FileLoader loader;
     private final SchedulerConfig schedulerConfig;
+    private final PolyglotContextConfig contextConfig;
     private final ScheduledReloadCallback callback;
     private ScheduledExecutorService executor;
 
@@ -55,20 +57,22 @@ public class ScheduledReloader implements AutoCloseable {
     // Constructors
     // -------------------------------------------------------------------------
 
+
     public ScheduledReloader(FileSourceConfig sourceConfig, SchedulerConfig schedulerConfig,
-                             ScheduledReloadCallback callback) {
-        this(FileSourceFactory.create(sourceConfig), schedulerConfig, callback);
+                             PolyglotContextConfig contextConfig, ScheduledReloadCallback callback) {
+        this(FileSourceFactory.create(sourceConfig), schedulerConfig, contextConfig, callback);
     }
 
     public ScheduledReloader(FileSource source, SchedulerConfig schedulerConfig,
-                             ScheduledReloadCallback callback) {
-        this(new FileLoader(source), schedulerConfig, callback);
+                             PolyglotContextConfig contextConfig, ScheduledReloadCallback callback) {
+        this(new FileLoader(source), schedulerConfig, contextConfig, callback);
     }
 
     public ScheduledReloader(FileLoader fileLoader, SchedulerConfig schedulerConfig,
-                             ScheduledReloadCallback callback) {
+                             PolyglotContextConfig contextConfig, ScheduledReloadCallback callback) {
         this.loader = fileLoader;
         this.schedulerConfig = schedulerConfig;
+        this.contextConfig = contextConfig;
         this.callback = callback;
     }
 
@@ -113,7 +117,7 @@ public class ScheduledReloader implements AutoCloseable {
         if (hasChanged) {
 
             try {
-                PolyglotInterpreter interpreter = new PolyglotInterpreter();
+                PolyglotInterpreter interpreter = new PolyglotInterpreter(contextConfig);
 
                 for (Map.Entry<String, String> entry : result.contents().entrySet()) {
                     interpreter.addContext(TruffleLanguage.PYTHON, entry.getKey(), entry.getValue());

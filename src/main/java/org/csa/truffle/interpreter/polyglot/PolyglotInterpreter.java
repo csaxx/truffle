@@ -2,9 +2,6 @@ package org.csa.truffle.interpreter.polyglot;
 
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
-import org.graalvm.polyglot.HostAccess;
-import org.graalvm.polyglot.io.IOAccess;
-import org.graalvm.polyglot.PolyglotAccess;
 import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.Value;
 import org.slf4j.Logger;
@@ -25,9 +22,13 @@ public class PolyglotInterpreter implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(PolyglotInterpreter.class);
 
     /**
-     * Per-language static engine cache — never closed; caches compiled ASTs across contexts.
+     * Per-(language, config) static engine cache — never closed; caches compiled ASTs across contexts.
+     * Keyed by both language and config because GraalVM requires all contexts sharing an engine
+     * to use the same host-access policy.
      */
-    private static final ConcurrentHashMap<TruffleLanguage, Engine> SHARED_ENGINES = new ConcurrentHashMap<>();
+    private record EngineKey(TruffleLanguage language, PolyglotContextConfig config) {}
+
+    private static final ConcurrentHashMap<EngineKey, Engine> SHARED_ENGINES = new ConcurrentHashMap<>();
 
     public static void closeSharedEngines() {
         SHARED_ENGINES.values().forEach(Engine::close);
@@ -39,10 +40,22 @@ public class PolyglotInterpreter implements AutoCloseable {
      */
     private final LinkedHashMap<String, PolyglotContext> contexts = new LinkedHashMap<>();
 
+    private final PolyglotContextConfig config;
+
     /**
-     * Creates an empty interpreter. Use {@link #addContext} to load contexts.
+     * Creates an empty interpreter using {@link PolyglotContextConfig#MINIMAL} permissions.
+     * Use {@link #addContext} to load contexts.
      */
     public PolyglotInterpreter() {
+        this(PolyglotContextConfig.MINIMAL);
+    }
+
+    /**
+     * Creates an empty interpreter with the given context permissions.
+     * Use {@link #addContext} to load contexts.
+     */
+    public PolyglotInterpreter(PolyglotContextConfig config) {
+        this.config = config;
     }
 
     /**
@@ -85,18 +98,10 @@ public class PolyglotInterpreter implements AutoCloseable {
     }
 
     private Context createContext(TruffleLanguage language) {
-
-        Engine engine = SHARED_ENGINES.computeIfAbsent(language, lang -> Engine.newBuilder(lang.getId()).build());
-
-        return Context.newBuilder(language.getId())
-                .engine(engine)
-                .allowHostAccess(HostAccess.ALL)          // scripts call out.collect() on Flink Collector
-                .allowHostClassLookup(s -> false)         // no Java.type() calls in any script
-                .allowIO(IOAccess.NONE)                   // no file I/O; pure in-memory transforms
-                .allowNativeAccess(false)                 // no ctypes or native libraries
-                .allowCreateThread(false)                 // no threading in transform scripts
-                .allowPolyglotAccess(PolyglotAccess.NONE) // no cross-language eval
-                .build();
+        Engine engine = SHARED_ENGINES.computeIfAbsent(
+                new EngineKey(language, config),
+                k -> Engine.newBuilder(k.language().getId()).build());
+        return config.applyTo(Context.newBuilder(language.getId()).engine(engine)).build();
     }
 
     public boolean hasContext(String context) {

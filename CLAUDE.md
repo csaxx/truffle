@@ -112,17 +112,39 @@ subsequent `getMember()` call for the same name avoids a second polyglot lookup.
 
 **Per-context isolation.** Each loaded source gets its own `Context`. This prevents name
 collisions — two files can both define `process_element` without one overwriting the
-other. All contexts share a per-language static `Engine` (`SHARED_ENGINES`, a
-`ConcurrentHashMap<TruffleLanguage, Engine>`) so compiled ASTs are cached across contexts;
-the per-context overhead is only interpreter state.
+other. Contexts sharing the same `(TruffleLanguage, PolyglotContextConfig)` share a static
+`Engine` (`SHARED_ENGINES`, a `ConcurrentHashMap<EngineKey, Engine>`) so compiled ASTs are
+cached; the per-context overhead is only interpreter state. GraalVM requires all contexts
+on the same engine to use the same host-access policy — that is why the engine key includes
+the config, not just the language.
 
-**Constructor.**
+**Constructors.**
 ```java
-new PolyglotInterpreter()
+new PolyglotInterpreter()                          // uses PolyglotContextConfig.MINIMAL
+new PolyglotInterpreter(PolyglotContextConfig)     // explicit permission config
 ```
 Call `addContext(TruffleLanguage, String, String)` to load each source. The name
 parameter serves as the unique key; pass names in the desired index order for
 deterministic `getContexts()` / `executeAll()` ordering.
+
+**`PolyglotContextConfig`** (`src/main/java/org/csa/truffle/interpreter/polyglot/PolyglotContextConfig.java`)
+is a `Serializable` record that encapsulates all GraalVM context permissions and exposes an
+`applyTo(Context.Builder)` method.
+
+*Fields:* `hostAccess` (`HostAccessMode`), `allowHostClassLookup` (`boolean`), `ioAccess`
+(`IOAccessMode`), `allowNativeAccess` (`boolean`), `allowCreateThread` (`boolean`),
+`polyglotAccess` (`PolyglotAccessMode`).
+
+*Nested enums (all `Serializable` by virtue of being in a record):*
+- `HostAccessMode` — `ALL`, `EXPLICIT`, `NONE`
+- `IOAccessMode` — `ALL`, `NONE`
+- `PolyglotAccessMode` — `ALL`, `NONE`
+
+*Predefined constants:*
+- `MINIMAL` — `HostAccess.ALL` (scripts may call `out.collect()`), no class lookup, `IOAccess.NONE`,
+  no native, no threads, no polyglot. Default for `PolyglotInterpreter()` and `ScheduledReloader`.
+- `FULL` — all permissions enabled.
+- `SANDBOXED` — `HostAccess.NONE`, all else denied; pure language sandbox with no Java interop.
 
 **API.**
 - `addContext(language, context, content)` — evaluates `content` into a new context keyed
@@ -369,10 +391,14 @@ checks for it at the top of every `processElement()` call and re-throws it, fail
 **`ScheduledReloader`** (`src/main/java/org/csa/truffle/scheduler/ScheduledReloader.java`)
 manages a single dataset backed by a `FileLoader` and drives periodic polling:
 
-**Constructors:**
+**Constructors** (6 total — each group of 2 shares the same parameters but the second adds `PolyglotContextConfig`; omitting it defaults to `MINIMAL`):
 ```java
 new ScheduledReloader(FileSourceConfig sourceConfig, SchedulerConfig schedulerConfig, ScheduledReloadCallback callback)
-new ScheduledReloader(FileSource source,            SchedulerConfig schedulerConfig, ScheduledReloadCallback callback)
+new ScheduledReloader(FileSourceConfig sourceConfig, SchedulerConfig schedulerConfig, PolyglotContextConfig contextConfig, ScheduledReloadCallback callback)
+new ScheduledReloader(FileSource source,             SchedulerConfig schedulerConfig, ScheduledReloadCallback callback)
+new ScheduledReloader(FileSource source,             SchedulerConfig schedulerConfig, PolyglotContextConfig contextConfig, ScheduledReloadCallback callback)
+new ScheduledReloader(FileLoader fileLoader,         SchedulerConfig schedulerConfig, ScheduledReloadCallback callback)
+new ScheduledReloader(FileLoader fileLoader,         SchedulerConfig schedulerConfig, PolyglotContextConfig contextConfig, ScheduledReloadCallback callback)
 ```
 
 **`ScheduledReloader.ScheduledReloadCallback`** is a `@FunctionalInterface` inner interface with
