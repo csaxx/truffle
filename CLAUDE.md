@@ -1,444 +1,119 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Build Commands
 
-## Commands
-
-Use `run_job.bat` instead of calling `mvn` directly. It sets `JAVA_HOME` and
-the full Maven path automatically (both are needed on this machine).
+Use `run_job.bat` (never call `mvn` directly — not on PATH; sets JAVA_HOME automatically).
 
 ```bat
-rem Compile
 run_job.bat compile
-
-rem Run tests
 run_job.bat test
-
-rem Run the job (writes output/java/ and output/python/)
-rem exec:exec spawns a child JVM so Flink 2.x classloader isolation works correctly.
-run_job.bat exec
-
-rem exec-git loads files from Git repo instead of resource dir.
-run_job.bat exec-git
-
-rem Build a fat JAR for cluster submission
+run_job.bat exec           # writes output/java/ and output/python/
+run_job.bat exec-git       # loads scripts from Git repo
 run_job.bat package -DskipTests
 ```
 
-### Environment notes (Windows)
+After deleting resources, run `run_job.bat clean test` (not just `test`).
 
-- **`mvn` is not on PATH** — use `run_job.bat`, which delegates to `mvnw.cmd` (Maven Wrapper). On first run `mvnw.cmd` downloads Maven 3.9.12 into `~/.m2/wrapper/dists/` automatically.
-- **JAVA_HOME must be set** to the GraalVM JDK before invoking Maven, otherwise
-  the compiler reports "invalid target release: 21".
-  Path: `E:\code\dist\jvm\graalvm-jdk-21.0.10+8.1`
-- `run_job.bat` handles both of the above.
+**JAVA_HOME:** `E:\code\dist\jvm\graalvm-jdk-21.0.10+8.1` (GraalVM JDK 21)
 
-## IntelliJ Maven Runner
+## Formatting
 
-Four shared run configurations are committed under `.idea/runConfigurations/` and appear
-automatically in the Run/Debug selector (`Maven compile`, `Maven test`, `Maven exec`,
-`Maven exec-git`). They require a one-time per-machine setup in IntelliJ settings:
-
-1. **Maven home path** — Settings → Build, Execution, Deployment → Build Tools → Maven →
-   *Maven home path*:
-   `C:\Users\csa\.m2\wrapper\dists\apache-maven-3.9.12`
-
-2. **Runner JRE** — Settings → Build, Execution, Deployment → Build Tools → Maven →
-   Runner → *JRE*: pick **GraalVM JDK 21**
-   (`E:\code\dist\jvm\graalvm-jdk-21.0.10+8.1`).
-   If it is not listed, add it first via File → Project Structure → SDKs.
-
-No env-var overrides are needed in the XML files — the globally configured Runner JRE
-provides GraalVM JDK 21 for both compilation and `exec:exec`'s `${java.home}` resolution.
-
-`run_job.bat` remains available for terminal use and requires no setup.
+IntelliJ IDEA default Java formatting style.
 
 ## Architecture
 
-This is an Apache Flink 2.x streaming job that reads bounded CSV data, transforms it, and writes results to disk.
+Flink 2.x streaming job. Python/Groovy transform scripts are hot-reloadable via GraalVM polyglot (GraalPy).
 
-**Flink version:** controlled by `<flink.version>` in `pom.xml` (currently `2.2.0`).
+**Pipeline:** `data/sales_q{1,2,3}.csv → TruffleJob → ProcessFunctionJava / ProcessFunctionPython → output/{java,python}/sales_transformed.csv`
 
-### Pipeline flow
+Results collected via `executeAndCollect()` (no Flink sink). Parallelism 1.
 
-```
-classpath CSVs (data/sales_q{1,2,3}.csv)
-  → TruffleJob#loadCsvLines()        // loads lines into List<String>
-  → TruffleJob#runTransform(lines, fn)
-      → env.fromData(lines)          // bounded DataStream<String>
-      → .process(fn)                 // ProcessFunctionJava or ProcessFunctionPython
-      → executeAndCollect()          // triggers execution, collects locally
-  → TruffleJob#writeOutput()         // writes CSV header + rows
-  → output/java/sales_transformed.csv    (ProcessFunctionJava)
-  → output/python/sales_transformed.csv  (ProcessFunctionPython)
-```
+**Correctness baseline:** `ProcessFunctionEquivalenceTest` — asserts Java/Python output parity on a 20-row input.
 
-### Formatting style
+## PolyglotInterpreter
 
-This project uses the default JetBrains IntelliJ IDEA formatting style for Java code.
+`src/main/java/org/csa/truffle/interpreter/PolyglotInterpreter.java` — GraalVM polyglot context manager. Each source gets its own isolated `Context`; contexts sharing `(TruffleLanguage, PolyglotContextConfig)` share a static `Engine` for AST caching.
 
-### Key design choices
-
-- **No Flink sink:** results are collected via `DataStream.executeAndCollect()` and written to disk with plain Java I/O. This avoids the deprecated `SinkFunction` / `RichSinkFunction` API from Flink 1.x.
-- **Parallelism 1:** set explicitly in `TruffleJob` to keep local output deterministic and single-file.
-- **CSV resources are loaded before the Flink graph is built** — the driver reads them from the classpath into a `List<String>` and feeds the list to `env.fromData()`. All three quarterly files are concatenated; header rows are filtered inside `ProcessFunctionJava.processElement`.
-- **`ProcessFunctionPython` delegates entirely to Python** — `processElement` iterates all loaded Python files and calls each file's `process_element(line, out)` in order. The Python function calls `out.collect(...)` directly via GraalPy polyglot interop; no return value is used. This means all output routing logic lives in Python, not Java.
-
-### Project goal: Python-scriptable Flink ProcessFunctions
-
-The primary goal is to allow Flink `ProcessFunction` logic to be written in Python and
-executed inside a running Flink job via GraalVM's polyglot API (GraalPy). This enables
-hot-reloading of transform logic without recompiling or redeploying the JAR.
-
-**Correctness baseline:** `ProcessFunctionEquivalenceTest` runs the same 20-row
-input through both the canonical Java implementation (`ProcessFunctionJava`) and the
-Python implementation (`ProcessFunctionPython` → `transform.py`) and asserts their
-outputs are identical row-by-row. This ensures Python parity with the Java reference.
-
-### PolyglotInterpreter
-
-`PolyglotInterpreter` (`src/main/java/org/csa/truffle/interpreter/PolyglotInterpreter.java`)
-is a language-agnostic context manager — it manages the lifecycle of per-context polyglot
-execution contexts. File loading and change tracking are handled separately by `FileLoader`.
-Use the no-arg constructor and call `addContext` to load contexts.
-
-**`PolyglotContext`** (`src/main/java/org/csa/truffle/interpreter/PolyglotContext.java`) is a
-class that pairs a GraalVM `Context` with its name, language, and a `Map<String, Value>` member
-cache. Implements `AutoCloseable`; `close()` clears the cache and delegates to `context.close()`.
-`getMember(String memberName)` returns the cached `Value` for the named binding,
-or throws `NoSuchElementException` if the context does not define that name.
-Results are cached on first access; `hasMember()` also primes the cache on a hit, so a
-subsequent `getMember()` call for the same name avoids a second polyglot lookup.
-
-**Per-context isolation.** Each loaded source gets its own `Context`. This prevents name
-collisions — two files can both define `process_element` without one overwriting the
-other. Contexts sharing the same `(TruffleLanguage, PolyglotContextConfig)` share a static
-`Engine` (`SHARED_ENGINES`, a `ConcurrentHashMap<EngineKey, Engine>`) so compiled ASTs are
-cached; the per-context overhead is only interpreter state. GraalVM requires all contexts
-on the same engine to use the same host-access policy — that is why the engine key includes
-the config, not just the language.
-
-**Constructors.**
 ```java
-new PolyglotInterpreter()                          // uses PolyglotContextConfig.MINIMAL
-new PolyglotInterpreter(PolyglotContextConfig)     // explicit permission config
+new PolyglotInterpreter()                        // uses MINIMAL config
+new PolyglotInterpreter(PolyglotContextConfig)
+addContext(language, name, content)              // name = unique key, determines index order
 ```
-Call `addContext(TruffleLanguage, String, String)` to load each source. The name
-parameter serves as the unique key; pass names in the desired index order for
-deterministic `getContexts()` / `executeAll()` ordering.
 
-**`PolyglotContextConfig`** (`src/main/java/org/csa/truffle/interpreter/polyglot/PolyglotContextConfig.java`)
-is a `Serializable` record that encapsulates all GraalVM context permissions and exposes an
-`applyTo(Context.Builder)` method.
+**PolyglotContextConfig** (`src/main/java/org/csa/truffle/interpreter/polyglot/PolyglotContextConfig.java`) — Serializable record with `hostAccess`, `allowHostClassLookup`, `ioAccess`, `allowNativeAccess`, `allowCreateThread`, `polyglotAccess`.
+- `MINIMAL` — `HostAccess.ALL` (scripts may call `out.collect()`), no class lookup, `IOAccess.NONE` (default)
+- `FULL` — all permissions enabled
+- `SANDBOXED` — `HostAccess.NONE`, pure sandbox
 
-*Fields:* `hostAccess` (`HostAccessMode`), `allowHostClassLookup` (`boolean`), `ioAccess`
-(`IOAccessMode`), `allowNativeAccess` (`boolean`), `allowCreateThread` (`boolean`),
-`polyglotAccess` (`PolyglotAccessMode`).
+**API:** `hasContext`, `getContexts`, `getContext`, `hasMember`, `getMemberNames`, `getMember`, `getMembers`, `canExecute`, `execute`, `executeVoid`, `executeAll`, `executeAllVoid`, `executeAllPresent`, `executeAllVoidPresent`, `reset`, `close`, `closeSharedEngines` (static — JVM shutdown only).
 
-*Nested enums (all `Serializable` by virtue of being in a record):*
-- `HostAccessMode` — `ALL`, `EXPLICIT`, `NONE`
-- `IOAccessMode` — `ALL`, `NONE`
-- `PolyglotAccessMode` — `ALL`, `NONE`
+## GroovyInterpreter
 
-*Predefined constants:*
-- `MINIMAL` — `HostAccess.ALL` (scripts may call `out.collect()`), no class lookup, `IOAccess.NONE`,
-  no native, no threads, no polyglot. Default for `PolyglotInterpreter()` and `ScheduledReloader`.
-- `FULL` — all permissions enabled.
-- `SANDBOXED` — `HostAccess.NONE`, all else denied; pure language sandbox with no Java interop.
+`src/main/java/org/csa/truffle/interpreter/GroovyInterpreter.java` — Groovy equivalent of `PolyglotInterpreter`, runs via `GroovyShell` (JVM-native, not Truffle).
 
-**API.**
-- `addContext(language, context, content)` — evaluates `content` into a new context keyed
-  by `context`; throws `IllegalArgumentException` if the key is already loaded.
-- `hasContext(context)` — returns `true` if the named context is loaded.
-- `getContexts()` — returns context names in index order.
-- `getContext(context)` — returns the `PolyglotContext`; throws `NoSuchElementException` if not loaded.
-- `hasMember(context, member)` — returns whether the named binding exists in the context.
-- `getMemberNames(context)` — returns all member names in the named context.
-- `getMember(context, member)` — returns the cached `Value`; throws `NoSuchElementException` if the
-  context is not loaded or does not define the member.
-- `getMembers(member)` — returns one `Value` per loaded context in index order; throws
-  `NoSuchElementException` if any context does not define the member.
-- `canExecute(context, member)` — returns whether the named member can be executed.
-- `execute(context, member, args...)` — executes the member and returns the result.
-- `executeVoid(context, member, args...)` — executes the member with no return value.
-- `executeAll(member, args...)` — executes the member on every context in index order and returns
-  results; throws `NoSuchElementException` if any context does not define the member.
-- `executeAllVoid(member, args...)` — same as `executeAll` without collecting return values.
-- `executeAllPresent(member, args...)` — executes the member on every context that defines it,
-  skipping those that do not; returns results in index order.
-- `executeAllVoidPresent(member, args...)` — same as `executeAllPresent` without collecting return values.
-- `reset()` — closes all contexts and clears the map; the interpreter remains usable afterwards.
-- `close()` — delegates to `reset()`. Use try-with-resources.
-- `closeSharedEngines()` — closes and removes all per-language shared engines; call only at
-  JVM shutdown when no further polyglot contexts will be created.
-
-**Adding a new Python transform file.** Create the `.py` file under
-`src/main/resources/python/` with a `process_element(line, out)` function. No Java
-changes are required and no `index.txt` entry is needed — files are auto-discovered by
-`ResourceSource`. The function receives the raw CSV line as a string and the Flink
-`Collector<String>`; call `out.collect(...)` to emit output rows.
-
-### GroovyInterpreter
-
-`GroovyInterpreter` (`src/main/java/org/csa/truffle/interpreter/GroovyInterpreter.java`)
-is the Groovy equivalent of `PolyglotInterpreter`. Groovy is not a Truffle language and
-cannot use the GraalVM polyglot API; it runs natively on the JVM via `groovy.lang.GroovyShell`.
-`GroovyInterpreter` provides the same conceptual API (named contexts, member lookup,
-execute/executeAll/present variants) adapted to Groovy's embedding model.
-
-**`GroovyCallable`** (`src/main/java/org/csa/truffle/interpreter/GroovyCallable.java`) is a
-`@FunctionalInterface` with `Object call(Object... args)`. It is the Groovy equivalent of
-`org.graalvm.polyglot.Value` as the return type of `getMember()`.
-
-**`GroovyScriptContext`** (`src/main/java/org/csa/truffle/interpreter/GroovyScriptContext.java`)
-wraps a compiled `Script` with a `Map<String, GroovyCallable>` member cache. Parallel to
-`PolyglotContext`. `getMember(String)` returns a cached lambda `args -> script.invokeMethod(name, args)`
-or throws `NoSuchElementException` if absent. `hasMember()` primes the cache on a hit.
-`getMembers()` returns the names of all user-defined methods by inspecting
-`script.getClass().getDeclaredMethods()` with filters: `isPublic`, `!isSynthetic`, `!isBridge`,
-`!name.equals("run")`, `!name.contains("$")` (excludes the script body and Groovy-generated helpers).
-`close()` clears the member cache.
-
-**Constructor.**
 ```java
 new GroovyInterpreter()
+addContext(name, content)    // no language param
 ```
-Call `addContext(String name, String content)` to load each source. No `TruffleLanguage`
-parameter — always Groovy.
 
-**`addContext(name, content)`** — `shell.parse(content, name)` compiles the script; `script.run()`
-executes the top-level body (equivalent to `context.eval()`); then stores a `GroovyScriptContext`.
-Throws `IllegalArgumentException` on duplicate name. Parse/eval errors surface as unchecked
-`GroovyRuntimeException` — no `throws Exception` needed.
+Returns `GroovyCallable` (not `Value`) from `getMember`; returns `Object` (not `Value`) from `execute`. `reset()` recreates the shell to prevent class loader leaks across reload cycles. `canExecute` always `true` if member exists; throws `NoSuchElementException` if absent.
 
-**`reset()`** — closes all contexts, clears the map, then `shell = new GroovyShell(new Binding())`.
-Recreating the shell prevents the internal `GroovyClassLoader` from accumulating stale class
-definitions across reload cycles (important for long-running `ScheduledReloader` use).
+## FileSource
 
-**API — differences from `PolyglotInterpreter`:**
+`src/main/java/org/csa/truffle/source/` — supplies file contents to `FileLoader`. All implementations auto-discover files (no `index.txt`).
 
-| PolyglotInterpreter | GroovyInterpreter |
-|---|---|
-| `addContext(TruffleLanguage, String, String)` | `addContext(String, String)` — no language param |
-| `getMember(...) → Value` | `getMember(...) → GroovyCallable` |
-| `getMembers(...) → Map<String, Value>` | `getMembers(...) → Map<String, GroovyCallable>` |
-| `execute(...) → Value` | `execute(...) → Object` |
-| `executeAll(...) → Map<String, Value>` | `executeAll(...) → Map<String, Object>` |
-| `canExecute(...)` — checks `Value.canExecute()` | `canExecute(...)` — always `true` if member exists; throws `NoSuchElementException` if absent |
-| `closeSharedEngines()` (static) | *(omitted — no static shared state)* |
+| Class | Config | Source |
+|---|---|---|
+| `ResourceSource` | `ResourceSourceConfig(dir, filemasks[], excludeFilemasks[])` | Classpath JAR |
+| `GitSource` | `GitSourceConfig(url, dir, branch, token, forge)` | GitHub / GitLab / Gitea via HTTP |
+| `S3Source` | `S3SourceConfig.forAws(bucket, prefix)` / `.forMinio(...)` | AWS S3 / MinIO |
+| `FileSystemSource` | `FileSystemSourceConfig(path, watch)` | Local filesystem + WatchService |
+| `MapFileSource` | `MapFileSourceConfig(filemasks[])` | In-memory; `put/remove/triggerChange` |
 
-`executeVoid`, `executeAllVoid`, `executeAllPresent`, `executeAllVoidPresent` — identical
-semantics to their `PolyglotInterpreter` counterparts.
+`filemasks` matches any pattern against the filename; `excludeFilemasks` excludes if any pattern matches any path component. `FileSourceFactory.create(config)` instantiates the correct source.
 
-**Tests.**
-- `GroovyInterpreterLoadTest` (13 tests) — mirrors `PolyglotInterpreterLoadTest`; includes
-  `assertFalse(names.contains("run"))` in `getMemberNames` to validate the method filter.
-- `GroovyInterpreterExecuteTest` (11 tests) — mirrors `PolyglotInterpreterExecuteTest`;
-  `canExecute_nonCallable_returnsFalse` has no Groovy equivalent (all discovered members are
-  methods) and is replaced by `canExecute_missingMember_throwsNoSuchElementException`;
-  `executeAllPresent_skipsContextsWithoutMember` is added to cover skip-on-absent behavior.
+**Adding a new FileSource:** implement `listFiles()` + `readFile(name)`, create a config record implementing `FileSourceConfig`, add a `case` to `FileSourceFactory.create()`.
 
-### FileSource implementations
+## FileLoader
 
-These classes (in `org.csa.truffle.source`) are used by `ProcessFunctionPython` via
-`FileSourceFactory` to supply Python file contents to `FileLoader` and `ScheduledReloader`.
+`src/main/java/org/csa/truffle/loader/FileLoader.java` — mtime-based content cache over a `FileSource`.
 
-**`FileSource` interface** (`org.csa.truffle.source.FileSource`). `listFiles()` returns
-an ordered `Map<String, Optional<Instant>>` of filename → modification timestamp;
-`readFile(name)` returns file content. The optional timestamp is `empty()` if the source
-cannot determine the mtime for a file. `setChangeListener(Runnable)` and `close()` have
-default no-op implementations; push-capable sources override them.
-
-All implementations **auto-discover** files by walking/listing their source — no
-`index.txt` is needed. The `filemasks` `String[]` filters by filename — a file matches
-if its name matches **any** pattern; `null` or empty array = no filter (accept all).
-The `excludeFilemasks` `String[]` excludes files — a file is excluded if any pattern
-matches **any component** of its relative path (not just the filename). Pass `"venv"` in
-`excludeFilemasks` to exclude `venv/` subtrees. Results are sorted alphabetically.
-Filemasks and excludeFilemasks are supplied in the config constructor; no post-construction
-mutation exists.
-
-Five implementations ship with the project, split into subpackages:
-
-| Implementation (package) | Source | Config record |
-|--------------------------|--------|---------------|
-| `resource.ResourceSource` | Classpath JAR | `new ResourceSourceConfig("python")` |
-| `git.GitSource` | GitHub / GitLab / Gitea via HTTP | `new GitSourceConfig(url, dir, branch, token, forge)` |
-| `s3.S3Source` | AWS S3 / MinIO | `new S3SourceConfig(...)` or static helpers |
-| `file.FileSystemSource` | Local filesystem + WatchService | `new FileSystemSourceConfig(path, watch)` |
-| `map.MapFileSource` | In-memory mutable map | `new MapFileSourceConfig(new String[]{"*.py"})` |
-
-**Config records and `FileSourceFactory`.** `FileSourceConfig` is a `Serializable` marker
-interface with two methods: `filemasks()` and `excludeFilemasks()` (default returns `null`).
-All record components are primitives, Strings, or enums — serialization is guaranteed.
-`FileSourceFactory.create(FileSourceConfig)` is a `final class` with a static factory method;
-it uses a `switch` on the concrete type to instantiate the correct `FileSource`. S3 credential
-wiring and `Path` conversion live here, keeping the source classes free of construction details.
-`ProcessFunctionPython` stores a `FileSourceConfig`; `open()` creates a `ScheduledReloader`
-which calls the factory. The default constructor uses
-`new ResourceSourceConfig("python", new String[]{"*.py"}, new String[]{"flink_types.py", "venv"})`
-(excludes the IDE type-stub and venv subtrees).
-
-**`resource.ResourceSource`** auto-discovers files from the classpath by walking the
-`{directory}` tree (handles both `file://` filesystem JARs and `jar://` running-from-JAR protocols).
-
-**`git.GitSource`** auto-discovers files in a Git repository via the forge's tree API —
-no clone required. Supports GitHub, GitLab, and Gitea/Forgejo. The forge is identified
-by `GitForgeType` (GITHUB, GITLAB, GITEA); pass `null` in `GitSourceConfig` to
-auto-detect from the URL (github.com → GITHUB, all others → GITLAB). Authentication:
-set `token`; pass `null` for public repos. File contents are fetched via raw-content
-HTTP. `GitSource` has an 8-arg public constructor accepting `filemasks`, `excludeFilemasks`,
-and a pre-built `apiBaseUrl` for test isolation.
-
-**`s3.S3Source`** auto-discovers files via `listObjectsV2Paginator` (mtime comes free
-from listing, no extra `HeadObject` calls). `S3SourceConfig` has two static helpers:
-- `S3SourceConfig.forAws(bucket, prefix)` — AWS S3 with the default credential chain.
-- `S3SourceConfig.forMinio(endpoint, bucket, prefix, accessKeyId, secretKey)` — MinIO /
-  custom endpoint with explicit credentials.
-An empty `prefix` fetches objects from the bucket root.
-`FileSourceFactory` builds the `S3Client` from config fields.
-
-**`file.FileSystemSource`** auto-discovers files from a local directory using
-`Files.readString`. The `watch` boolean in `FileSystemSourceConfig` controls whether it
-starts a `WatchService` daemon thread. When watching, `setChangeListener` monitors the
-directory for `ENTRY_CREATE`, `ENTRY_MODIFY`, and `ENTRY_DELETE` events, debounces 100 ms,
-then calls the registered callback. Call `close()` (or use try-with-resources) to stop
-the watcher thread.
-
-**`map.MapFileSource`** holds files in a thread-safe in-memory map. Call `put(name, content)` to add or update a file and `remove(name)` to delete one; neither call automatically fires the change listener, allowing callers to batch mutations. Call `triggerChange()` to explicitly push a reload notification. Timestamps are recorded at each `put()` call so `FileLoader` can detect changes efficiently. The matching `MapFileSourceConfig` record carries only the filemasks; `FileSourceFactory` creates an empty source from it — callers who need pre-populated state should instantiate `MapFileSource` directly.
-
-**Push-notification protocol** (`setChangeListener`). `FileSource` has a default no-op
-`setChangeListener(Runnable onChanged)`. Sources that can detect changes (`FileSystemSource`)
-override it to start a watcher; pull-only sources inherit the no-op default. `FileLoader`
-registers `this::load` as the listener in its constructor.
-
-**Adding a new `FileSource`.** Implement `listFiles()` and `readFile(name)` in a new
-class (place it in an appropriate `source/` subpackage). Also create a config record
-implementing `FileSourceConfig` (with `filemasks()` and optionally `excludeFilemasks()`),
-add a corresponding `case` to `FileSourceFactory.create()`, and pass the config to
-`new ProcessFunctionPython(yourConfig, schedulerConfig)`. No other changes needed.
-
-### FileLoader
-
-**`FileLoader`** (`src/main/java/org/csa/truffle/loader/FileLoader.java`) is a `Closeable`
-content cache that reads `.py` files from a `FileSource` and tracks changes via per-file
-modification timestamps.
-
-**`load()`** (re)reads the file list from `source.listFiles()`. On the first call every file is
-read; on subsequent calls a file is re-read only when its mtime has advanced (or the source cannot
-provide a timestamp). Files no longer returned by `listFiles()` are evicted from the cache.
-**Never throws** — I/O errors are captured and returned in the `LoadResult`. Updates
-`FileLoaderStatus` on every call regardless of outcome.
-
-**`LoadResult`** (`src/main/java/org/csa/truffle/loader/LoadResult.java`) is the return type of
-`load()`. It is a record with four fields:
-- `success` (`boolean`) — `true` when no I/O error occurred.
-- `status` — the loader's `FileLoaderStatus` instance (same reference as `getStatus()`).
-- `changes` (`List<FileChangeInfo>`) — per-file change details (ADDED / UNMODIFIED / MODIFIED /
-  REMOVED); non-null on success, `null` on failure.
-- `error` (`Exception`) — the caught exception; `null` on success.
-
-**`FileChangeInfo`** (`src/main/java/org/csa/truffle/loader/FileChangeInfo.java`) is a record
-with `filePath`, `modifiedAt` (`Optional<Instant>`), and `status` (`ChangeStatus` enum:
-ADDED, UNMODIFIED, MODIFIED, REMOVED).
-
-**`FileLoader.FileLoadCallback`** is a `@FunctionalInterface` inner interface fired after every
-`load()` attempt with a single method: `onReload(LoadResult result)`.
-
-**`getFileContents()`** returns a defensive `LinkedHashMap<String, String>` snapshot in index order.
-
-**`getStatus()`** returns the `FileLoaderStatus` instance. Fields are package-private (written by
-`FileLoader`) with public getters:
-- `lastCheckedAt` — set on every `load()` call; `null` until the first call.
-- `lastChangedAt` — set only when `load()` detects a change.
-- `lastSuccessAt` — set on every successful `load()`.
-- `lastDataAge` — max mtime across all listed files from the most recent load; `null` if none reported.
-- `loadedFiles` — `Set<String>` snapshot of currently cached filenames.
-- `lastErrorAt` / `lastError` / `firstErrorAt` — error streak tracking.
-
-**Push-notification.** `FileLoader` calls `source.setChangeListener(this::load)` in its
-constructor. When a push-capable source fires the listener, `load()` runs automatically.
-Pull-only sources inherit the no-op default and are unaffected.
-
-**`close()`** delegates to `source.close()`. Always use try-with-resources.
-
-**Constructors:** `FileLoader(FileSource source)` and `FileLoader(FileSource source, FileLoader.FileLoadCallback callback)`.
-
-**`FileLoaderTest`** (`src/test/java/org/csa/truffle/loader/FileLoaderTest.java`) covers
-Cases 1–4 (removed / added / unchanged / changed files), `FileLoaderStatus` field tracking,
-callback firing, and push-notification integration via `NotifyingSource` — an inner test helper
-that captures the registered listener and exposes `triggerChange()` to fire it synchronously
-without a real watcher. Uses `SwitchableFileSource` and the existing `python_hr_v1` /
-`python_hr_v2` test resources.
-
-**`FileLoaderResultTest`** (`src/test/java/org/csa/truffle/loader/FileLoaderResultTest.java`)
-exercises `LoadResult` fields and `FileLoadCallback` dispatch in isolation using `ResourceSource`
-and an inline `FailingSource`. Covers all combinations of success/failure × result fields ×
-callback routing (12 tests).
-
-### Scheduled reload
-
-**`SchedulerConfig`** (`src/main/java/org/csa/truffle/scheduler/SchedulerConfig.java`)
-is a `Serializable` record with two components: `Duration interval` and `Duration gracePeriod`.
-Passing a config object (rather than a raw `Duration`) to `ProcessFunctionPython` mirrors the
-`FileSourceConfig` pattern and ensures the value survives Flink serialization across distributed
-operators. The single-arg constructor `SchedulerConfig(interval)` defaults `gracePeriod` to
-`Duration.ZERO`, which means reload errors are tolerated indefinitely (logged but never fatal).
-When `gracePeriod` is positive, background reload failures that persist longer than the grace
-period cause `ScheduledReloader` to store a fatal `RuntimeException`; `ProcessFunctionPython`
-checks for it at the top of every `processElement()` call and re-throws it, failing the Flink task.
-
-**`ScheduledReloader`** (`src/main/java/org/csa/truffle/scheduler/ScheduledReloader.java`)
-manages a single dataset backed by a `FileLoader` and drives periodic polling:
-
-**Constructors** (6 total — each group of 2 shares the same parameters but the second adds `PolyglotContextConfig`; omitting it defaults to `MINIMAL`):
 ```java
-new ScheduledReloader(FileSourceConfig sourceConfig, SchedulerConfig schedulerConfig, ScheduledReloadCallback callback)
-new ScheduledReloader(FileSourceConfig sourceConfig, SchedulerConfig schedulerConfig, PolyglotContextConfig contextConfig, ScheduledReloadCallback callback)
-new ScheduledReloader(FileSource source,             SchedulerConfig schedulerConfig, ScheduledReloadCallback callback)
-new ScheduledReloader(FileSource source,             SchedulerConfig schedulerConfig, PolyglotContextConfig contextConfig, ScheduledReloadCallback callback)
-new ScheduledReloader(FileLoader fileLoader,         SchedulerConfig schedulerConfig, ScheduledReloadCallback callback)
-new ScheduledReloader(FileLoader fileLoader,         SchedulerConfig schedulerConfig, PolyglotContextConfig contextConfig, ScheduledReloadCallback callback)
+new FileLoader(source)
+new FileLoader(source, callback)    // FileLoadCallback fired on every load()
 ```
 
-**`ScheduledReloader.ScheduledReloadCallback`** is a `@FunctionalInterface` inner interface with
-a single method:
+`load()` never throws — errors go into `LoadResult.error`. `getFileContents()` returns a `LinkedHashMap` snapshot in index order. `getStatus()` returns `FileLoaderStatus` (`lastCheckedAt`, `lastChangedAt`, `lastSuccessAt`, `loadedFiles`, error fields). Registers `this::load` as the source's push-change listener.
+
+## ScheduledReloader
+
+`src/main/java/org/csa/truffle/scheduler/ScheduledReloader.java` — drives periodic `FileLoader` polls; fires `ScheduledReloadCallback` only when changes are detected.
+
 ```java
-void onReload(FileLoaderStatus status, GraalPyInterpreter interpreter)
+new ScheduledReloader(FileSourceConfig|FileSource|FileLoader, SchedulerConfig [, PolyglotContextConfig], callback)
 ```
-The callback is fired **only when changes are detected** (not on every successful poll), including
-the initial synchronous load on `start()`. When the grace period is exceeded, the callback is
-fired once more with `interpreter = null` to let the caller clean up.
 
-**Lifecycle:**
-- `start()` performs an initial **synchronous** reload on the calling thread (guaranteeing
-  data is ready before Flink calls `processElement`), throws `IOException` if the initial load
-  fails, then schedules background reloads via a single-daemon-thread `ScheduledExecutorService`
-  at `schedulerConfig.interval()`.
-- `checkForFatalError()` — throws the stored `fatalError` if the grace period was exceeded;
-  no-op otherwise. Called by `ProcessFunctionPython.processElement()` on every record.
-- `getStatus()` — delegates to `FileLoader.getStatus()` for observable reload timestamps.
-- `getFatalError()` — returns the stored `RuntimeException` if the grace period was exceeded,
-  or `null` otherwise.
-- `getFirstErrorAt()` — returns the start of the current error streak (tracked inside
-  `ScheduledReloader`, not `FileLoaderStatus`), or `null` if no errors have occurred.
-- `close()` — calls `executor.shutdownNow()` and `loader.close()`. Use try-with-resources.
+`SchedulerConfig(interval)` — `gracePeriod` defaults to `Duration.ZERO` (errors never fatal). When positive, reload failures exceeding the grace period store a `fatalError`; `ProcessFunctionPython.processElement()` re-throws it.
 
-**Error streak tracking.** `firstErrorAt` is a `volatile Instant` owned by `ScheduledReloader`.
-On each successful reload it is cleared to `null`. On the first failed reload it is set to
-`Instant.now()`; subsequent failures compute `Duration.between(firstErrorAt, now)` and set
-`fatalError` once the streak exceeds `gracePeriod`.
+`start()` — synchronous initial load on calling thread, then schedules background polling. Methods: `checkForFatalError()`, `getStatus()`, `getFatalError()`, `getFirstErrorAt()`, `close()`.
 
-**`ProcessFunctionPython` constructors:**
-- `()` — defaults to `new SchedulerConfig(Duration.ofMinutes(5))` + classpath `python/` dir.
-- `(Duration interval)` — convenience overload; wraps in `SchedulerConfig`.
-- `(FileSourceConfig sourceConfig, SchedulerConfig schedulerConfig)` — primary constructor.
-- `(SchedulerConfig schedulerConfig, FileSourceConfig sourceConfig)` — alternate arg order.
+**Callback:** `void onReload(FileLoaderStatus, GraalPyInterpreter)` — fired only on changes; `interpreter = null` when grace period exceeded (caller should clean up).
 
-### Adding a new ProcessFunction
+## ProcessFunctionPython constructors
 
-Extend `ProcessFunction<IN, OUT>` and override `processElement`. Chain it onto the stream in `TruffleJob` with `.process(new YourFunction())`. The existing `ProcessFunctionJava` is the reference example.
+```java
+new ProcessFunctionPython()                           // 5-min interval, classpath python/
+new ProcessFunctionPython(Duration interval)
+new ProcessFunctionPython(FileSourceConfig, SchedulerConfig)
+new ProcessFunctionPython(SchedulerConfig, FileSourceConfig)
+```
 
-### Adding a new CSV source
+Default config excludes `flink_types.py` and `venv/` subtrees.
 
-Add the file to `src/main/resources/data/` and append its name to `TruffleJob.CSV_RESOURCES`. Header detection in `ProcessFunctionJava` is based on the literal string `"transactionId"` — update that check if a new source uses a different header.
+## Extension points
+
+**New Python transform:** create `.py` with `process_element(line, out)` in `src/main/resources/python/`. Auto-discovered; no Java changes needed.
+
+**New ProcessFunction:** extend `ProcessFunction<IN, OUT>`, override `processElement`, chain in `TruffleJob` with `.process(new YourFunction())`.
+
+**New CSV source:** add file to `src/main/resources/data/`, append name to `TruffleJob.CSV_RESOURCES`. Header detection uses `"transactionId"` — update if different.
