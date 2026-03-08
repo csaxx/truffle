@@ -309,7 +309,7 @@ public class PolyglotInterpreter implements AutoCloseable {
      * @throws NoSuchElementException if the context is not loaded
      */
     public Value invoke(String context, String member, Object... args) throws NoSuchElementException {
-        return getContext(context).invokeMember(member, args);
+        return getContext(context).getBindings().invokeMember(member, args);
     }
 
     /**
@@ -320,7 +320,7 @@ public class PolyglotInterpreter implements AutoCloseable {
     public Map<String, Value> invokeAll(String member, Object... args) throws NoSuchElementException {
         Map<String, Value> results = new LinkedHashMap<>();
         for (Map.Entry<String, PolyglotContext> entry : contexts.entrySet()) {
-            results.put(entry.getKey(), entry.getValue().invokeMember(member, args));
+            results.put(entry.getKey(), entry.getValue().getBindings().invokeMember(member, args));
         }
         return results;
     }
@@ -333,7 +333,7 @@ public class PolyglotInterpreter implements AutoCloseable {
         Map<String, Value> results = new LinkedHashMap<>();
         for (Map.Entry<String, PolyglotContext> entry : contexts.entrySet()) {
             if (entry.getValue().hasMember(member)) {
-                results.put(entry.getKey(), entry.getValue().invokeMember(member, args));
+                results.put(entry.getKey(), entry.getValue().getBindings().invokeMember(member, args));
             }
         }
         return results;
