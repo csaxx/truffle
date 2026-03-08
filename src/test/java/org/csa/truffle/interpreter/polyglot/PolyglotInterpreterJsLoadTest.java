@@ -87,12 +87,35 @@ class PolyglotInterpreterJsLoadTest {
     }
 
     @Test
-    void addContext_duplicateId_throwsIllegalArgumentException() throws Exception {
+    void addContext_sameNameSameContent_isNoOp() throws Exception {
         try (PolyglotInterpreter interp = new PolyglotInterpreter()) {
             interp.addContext(TruffleLanguage.JS, "a.js", "var x = 1;");
-            assertThrows(IllegalArgumentException.class,
-                    () -> interp.addContext(TruffleLanguage.JS, "a.js", "var x = 2;"));
+            interp.addContext(TruffleLanguage.JS, "a.js", "var x = 1;");
+            assertEquals(1, interp.getContexts().size());
+            assertEquals(1, interp.getMember("a.js", "x").asInt());
         }
+    }
+
+    @Test
+    void addContext_sameNameDifferentContent_reloadsContext() throws Exception {
+        try (PolyglotInterpreter interp = new PolyglotInterpreter()) {
+            interp.addContext(TruffleLanguage.JS, "a.js", "var x = 1;");
+            interp.addContext(TruffleLanguage.JS, "a.js", "var y = 2;");
+            assertEquals(1, interp.getContexts().size());
+            assertFalse(interp.hasMember("a.js", "x"));
+            assertEquals(2, interp.getMember("a.js", "y").asInt());
+        }
+    }
+
+    @Test
+    void removeContext_removesContext() throws Exception {
+        PolyglotInterpreter interp = new PolyglotInterpreter();
+        interp.addContext(TruffleLanguage.JS, "a.js", "var x = 1;");
+        interp.removeContext("a.js");
+        assertFalse(interp.hasContext("a.js"));
+        assertTrue(interp.getContexts().isEmpty());
+        assertThrows(NoSuchElementException.class, () -> interp.getMember("a.js", "x"));
+        interp.close();
     }
 
     @Test

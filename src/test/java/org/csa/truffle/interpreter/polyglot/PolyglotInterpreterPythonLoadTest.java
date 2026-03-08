@@ -87,12 +87,35 @@ class PolyglotInterpreterPythonLoadTest {
     }
 
     @Test
-    void addContext_duplicateId_throwsIllegalArgumentException() throws Exception {
+    void addContext_sameNameSameContent_isNoOp() throws Exception {
         try (PolyglotInterpreter interp = new PolyglotInterpreter()) {
             interp.addContext(TruffleLanguage.PYTHON, "a.py", "x = 1");
-            assertThrows(IllegalArgumentException.class,
-                    () -> interp.addContext(TruffleLanguage.PYTHON, "a.py", "x = 2"));
+            interp.addContext(TruffleLanguage.PYTHON, "a.py", "x = 1");
+            assertEquals(1, interp.getContexts().size());
+            assertEquals(1, interp.getMember("a.py", "x").asInt());
         }
+    }
+
+    @Test
+    void addContext_sameNameDifferentContent_reloadsContext() throws Exception {
+        try (PolyglotInterpreter interp = new PolyglotInterpreter()) {
+            interp.addContext(TruffleLanguage.PYTHON, "a.py", "x = 1");
+            interp.addContext(TruffleLanguage.PYTHON, "a.py", "y = 2");
+            assertEquals(1, interp.getContexts().size());
+            assertFalse(interp.hasMember("a.py", "x"));
+            assertEquals(2, interp.getMember("a.py", "y").asInt());
+        }
+    }
+
+    @Test
+    void removeContext_removesContext() throws Exception {
+        PolyglotInterpreter interp = new PolyglotInterpreter();
+        interp.addContext(TruffleLanguage.PYTHON, "a.py", "x = 1");
+        interp.removeContext("a.py");
+        assertFalse(interp.hasContext("a.py"));
+        assertTrue(interp.getContexts().isEmpty());
+        assertThrows(NoSuchElementException.class, () -> interp.getMember("a.py", "x"));
+        interp.close();
     }
 
     @Test
