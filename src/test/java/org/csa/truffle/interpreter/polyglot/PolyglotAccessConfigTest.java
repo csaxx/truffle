@@ -19,7 +19,7 @@ class PolyglotAccessConfigTest {
 
     @Test
     void minimal_allowsHostObjectAccess() throws Exception {
-        try (PolyglotInterpreter interp = new PolyglotInterpreter(PolyglotAccessConfig.MINIMAL)) {
+        try (PolyglotInterpreter interp = new PolyglotInterpreter(PolyglotAccessConfig.HOST)) {
             interp.addContext(TruffleLanguage.PYTHON, "t.py",
                     "def fn(out): out.collect('ok')");
             TestCollector col = new TestCollector();
@@ -30,7 +30,7 @@ class PolyglotAccessConfigTest {
 
     @Test
     void minimal_deniesHostClassLookup() throws Exception {
-        try (PolyglotInterpreter interp = new PolyglotInterpreter(PolyglotAccessConfig.MINIMAL)) {
+        try (PolyglotInterpreter interp = new PolyglotInterpreter(PolyglotAccessConfig.HOST)) {
             interp.addContext(TruffleLanguage.JS, "t.js",
                     "function fn() { return Java.type('java.lang.String'); }");
             assertThrows(PolyglotException.class, () -> interp.execute("t.js", "fn"));

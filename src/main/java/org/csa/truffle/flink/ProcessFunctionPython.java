@@ -78,7 +78,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
 
         log.info("Opening: loading Python scripts");
 
-        scheduler = new ScheduledReloader(sourceConfig, schedulerConfig, PolyglotAccessConfig.MINIMAL,
+        scheduler = new ScheduledReloader(sourceConfig, schedulerConfig, PolyglotAccessConfig.HOST,
                 (status, newInterpreter) -> {
                     // update interpreter (called from scheduler thread)
                     PolyglotInterpreter oldInterpreter = this.interpreter;

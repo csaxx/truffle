@@ -18,7 +18,7 @@ class ScheduledReloaderTest {
     @Test
     void lastCheckedAt_setAfterStart() throws Exception {
         try (ScheduledReloader reloader = new ScheduledReloader(
-                new ResourceSourceConfig("python_hr_v1"), INTERVAL, PolyglotAccessConfig.MINIMAL, (status, interp) -> {
+                new ResourceSourceConfig("python_hr_v1"), INTERVAL, PolyglotAccessConfig.HOST, (status, interp) -> {
         })) {
             reloader.start();
             assertNotNull(reloader.getStatus().getLastCheckedAt());
@@ -29,7 +29,7 @@ class ScheduledReloaderTest {
     void lastChangedAt_setWhenDataChanges() throws Exception {
         // First load always produces files (new files are loaded)
         try (ScheduledReloader reloader = new ScheduledReloader(
-                new ResourceSourceConfig("python_hr_v1"), INTERVAL, PolyglotAccessConfig.MINIMAL, (status, interp) -> {
+                new ResourceSourceConfig("python_hr_v1"), INTERVAL, PolyglotAccessConfig.HOST, (status, interp) -> {
         })) {
             reloader.start();
             assertNotNull(reloader.getStatus().getLastChangedAt());
@@ -41,7 +41,7 @@ class ScheduledReloaderTest {
         try (ScheduledReloader reloader = new ScheduledReloader(
                 new ResourceSourceConfig("python_hr_v1"),
                 new SchedulerConfig(Duration.ofMillis(50)),
-                PolyglotAccessConfig.MINIMAL,
+                PolyglotAccessConfig.HOST,
                 (status, interp) -> {
                 })) {
             reloader.start();
@@ -59,7 +59,7 @@ class ScheduledReloaderTest {
     @Test
     void periodicReload_firesWithinInterval() throws Exception {
         try (ScheduledReloader reloader = new ScheduledReloader(
-                new ResourceSourceConfig("python_hr_v1"), INTERVAL, PolyglotAccessConfig.MINIMAL, (status, interp) -> {
+                new ResourceSourceConfig("python_hr_v1"), INTERVAL, PolyglotAccessConfig.HOST, (status, interp) -> {
         })) {
             reloader.start();
             Instant after = reloader.getStatus().getLastCheckedAt();
@@ -75,7 +75,7 @@ class ScheduledReloaderTest {
     @Test
     void close_stopsScheduler() throws Exception {
         ScheduledReloader reloader = new ScheduledReloader(
-                new ResourceSourceConfig("python_hr_v1"), INTERVAL, PolyglotAccessConfig.MINIMAL, (status, interp) -> {
+                new ResourceSourceConfig("python_hr_v1"), INTERVAL, PolyglotAccessConfig.HOST, (status, interp) -> {
         });
         reloader.start();
         reloader.close();
@@ -92,7 +92,7 @@ class ScheduledReloaderTest {
     void gracePeriod_exceeded_fatalErrorThrows() throws Exception {
         SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
         SchedulerConfig cfg = new SchedulerConfig(Duration.ofMillis(30), Duration.ofMillis(100));
-        try (ScheduledReloader reloader = new ScheduledReloader(src, cfg, PolyglotAccessConfig.MINIMAL, (status, interp) -> {
+        try (ScheduledReloader reloader = new ScheduledReloader(src, cfg, PolyglotAccessConfig.HOST, (status, interp) -> {
         })) {
             reloader.start();
             src.switchTo("nonexistent_python_dir");   // all subsequent reloads fail
@@ -105,7 +105,7 @@ class ScheduledReloaderTest {
     void gracePeriod_zero_neverFails() throws Exception {
         SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
         SchedulerConfig cfg = new SchedulerConfig(Duration.ofMillis(30), Duration.ZERO);
-        try (ScheduledReloader reloader = new ScheduledReloader(src, cfg, PolyglotAccessConfig.MINIMAL, (status, interp) -> {
+        try (ScheduledReloader reloader = new ScheduledReloader(src, cfg, PolyglotAccessConfig.HOST, (status, interp) -> {
         })) {
             reloader.start();
             src.switchTo("nonexistent_python_dir");
@@ -119,7 +119,7 @@ class ScheduledReloaderTest {
         SwitchableFileSource src = new SwitchableFileSource("python_hr_v1");
         // Grace period: 300ms; cause errors for ~80ms, then recover
         SchedulerConfig cfg = new SchedulerConfig(Duration.ofMillis(30), Duration.ofMillis(300));
-        try (ScheduledReloader reloader = new ScheduledReloader(src, cfg, PolyglotAccessConfig.MINIMAL, (status, interp) -> {
+        try (ScheduledReloader reloader = new ScheduledReloader(src, cfg, PolyglotAccessConfig.HOST, (status, interp) -> {
         })) {
             reloader.start();
             src.switchTo("nonexistent_python_dir");
@@ -135,7 +135,7 @@ class ScheduledReloaderTest {
         AtomicInteger count = new AtomicInteger();
         try (ScheduledReloader reloader = new ScheduledReloader(
                 new ResourceSourceConfig("python_hr_v1"), INTERVAL,
-                PolyglotAccessConfig.MINIMAL,
+                PolyglotAccessConfig.HOST,
                 (status, interp) -> count.incrementAndGet())) {
             reloader.start();
             assertEquals(1, count.get(), "callback fires exactly once on initial load");
@@ -148,7 +148,7 @@ class ScheduledReloaderTest {
         try (ScheduledReloader reloader = new ScheduledReloader(
                 new ResourceSourceConfig("python_hr_v1"),
                 new SchedulerConfig(Duration.ofMillis(50)),
-                PolyglotAccessConfig.MINIMAL,
+                PolyglotAccessConfig.HOST,
                 (status, interp) -> count.incrementAndGet())) {
             reloader.start();
             assertEquals(1, count.get(), "callback fires once after initial load");

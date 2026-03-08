@@ -46,11 +46,11 @@ public class PolyglotInterpreter implements AutoCloseable {
     private final PolyglotAccessConfig accessConfig;
 
     /**
-     * Creates an empty interpreter using {@link PolyglotAccessConfig#MINIMAL} permissions.
+     * Creates an empty interpreter using {@link PolyglotAccessConfig#HOST} permissions.
      * Use {@link #addContext} to load contexts.
      */
     public PolyglotInterpreter() {
-        this(PolyglotAccessConfig.MINIMAL);
+        this(PolyglotAccessConfig.HOST);
     }
 
     /**
@@ -63,24 +63,56 @@ public class PolyglotInterpreter implements AutoCloseable {
 
     /**
      * Loads {@code content} as a polyglot source identified by {@code context}.
+     * <ul>
+     *   <li>If the context does not exist, it is created.</li>
+     *   <li>If the context exists and the content hash matches, nothing happens.</li>
+     *   <li>If the context exists and the content hash differs, the old context is disposed and a new one is created.</li>
+     * </ul>
      *
      * @param language the language of the source
      * @param context  unique identifier for this context (e.g. filename)
      * @param content  source code
-     * @throws IllegalArgumentException if a context with this context is already loaded
-     * @throws Exception                if the source fails to evaluate
+     * @throws Exception if the source fails to evaluate
      */
     public void addContext(TruffleLanguage language, String context, String content) throws Exception {
 
-        if (contexts.containsKey(context)) {
-            throw new IllegalArgumentException("Context already loaded: '" + context + "'");
+        String hash = sha256(content);
+
+        PolyglotContext existing = contexts.get(context);
+
+        if (existing != null) {
+            if (existing.contentHash().equals(hash)) {
+                log.debug("Context '{}' unchanged, skipping reload", context);
+                return;
+            }
+
+            log.debug("Context '{}' changed, reloading", context);
+            existing.close();
+            contexts.remove(context);
         }
 
         Context ctx = createContext(language);
         ctx.eval(Source.newBuilder(language.getId(), content, context).build());
-        contexts.put(context, new PolyglotContext(language, context, ctx, sha256(content)));
+        contexts.put(context, new PolyglotContext(language, context, ctx, hash));
 
         log.debug("Loaded context '{}' ({})", context, language.getId());
+    }
+
+    /**
+     * Disposes and removes the named context.
+     *
+     * @throws NoSuchElementException if the context is not loaded
+     */
+    public void removeContext(String context) {
+        PolyglotContext existing = contexts.remove(context);
+        if (existing == null) {
+            throw new NoSuchElementException("Context '" + context + "' is not loaded");
+        }
+        try {
+            existing.close();
+        } catch (Exception ignored) {
+        }
+        log.debug("Removed context '{}'", context);
     }
 
     private Context createContext(TruffleLanguage language) {
