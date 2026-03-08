@@ -9,7 +9,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class PolyglotContextConfigTest {
+class PolyglotAccessConfigTest {
 
     static class TestCollector implements Collector<String> {
         final List<String> output = new ArrayList<>();
@@ -19,7 +19,7 @@ class PolyglotContextConfigTest {
 
     @Test
     void minimal_allowsHostObjectAccess() throws Exception {
-        try (PolyglotInterpreter interp = new PolyglotInterpreter(PolyglotContextConfig.MINIMAL)) {
+        try (PolyglotInterpreter interp = new PolyglotInterpreter(PolyglotAccessConfig.MINIMAL)) {
             interp.addContext(TruffleLanguage.PYTHON, "t.py",
                     "def fn(out): out.collect('ok')");
             TestCollector col = new TestCollector();
@@ -30,7 +30,7 @@ class PolyglotContextConfigTest {
 
     @Test
     void minimal_deniesHostClassLookup() throws Exception {
-        try (PolyglotInterpreter interp = new PolyglotInterpreter(PolyglotContextConfig.MINIMAL)) {
+        try (PolyglotInterpreter interp = new PolyglotInterpreter(PolyglotAccessConfig.MINIMAL)) {
             interp.addContext(TruffleLanguage.JS, "t.js",
                     "function fn() { return Java.type('java.lang.String'); }");
             assertThrows(PolyglotException.class, () -> interp.execute("t.js", "fn"));
@@ -39,7 +39,7 @@ class PolyglotContextConfigTest {
 
     @Test
     void full_allowsHostClassLookup() throws Exception {
-        try (PolyglotInterpreter interp = new PolyglotInterpreter(PolyglotContextConfig.FULL)) {
+        try (PolyglotInterpreter interp = new PolyglotInterpreter(PolyglotAccessConfig.FULL)) {
             interp.addContext(TruffleLanguage.JS, "t.js",
                     "function fn() { return Java.type('java.lang.String'); }");
             // Should not throw — returns the String class
@@ -49,7 +49,7 @@ class PolyglotContextConfigTest {
 
     @Test
     void sandboxed_deniesHostObjectAccess() throws Exception {
-        try (PolyglotInterpreter interp = new PolyglotInterpreter(PolyglotContextConfig.SANDBOXED)) {
+        try (PolyglotInterpreter interp = new PolyglotInterpreter(PolyglotAccessConfig.SANDBOXED)) {
             interp.addContext(TruffleLanguage.JS, "t.js",
                     "function fn(col) { col.collect('x'); }");
             TestCollector col = new TestCollector();

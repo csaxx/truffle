@@ -119,11 +119,11 @@ class PolyglotInterpreterJsLoadTest {
     }
 
     @Test
-    void reset_clearsAllContexts() throws Exception {
+    void clear_clearsAllContexts() throws Exception {
         PolyglotInterpreter interp = new PolyglotInterpreter();
         interp.addContext(TruffleLanguage.JS, "a.js", "var x = 1;");
         interp.addContext(TruffleLanguage.JS, "b.js", "var y = 2;");
-        interp.reset();
+        interp.clear();
         assertTrue(interp.getContexts().isEmpty());
         // interpreter is reusable after reset
         interp.addContext(TruffleLanguage.JS, "c.js", "var z = 3;");

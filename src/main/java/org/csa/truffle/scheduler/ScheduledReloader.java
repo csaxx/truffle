@@ -1,6 +1,6 @@
 package org.csa.truffle.scheduler;
 
-import org.csa.truffle.interpreter.polyglot.PolyglotContextConfig;
+import org.csa.truffle.interpreter.polyglot.PolyglotAccessConfig;
 import org.csa.truffle.interpreter.polyglot.PolyglotInterpreter;
 import org.csa.truffle.interpreter.polyglot.TruffleLanguage;
 import org.csa.truffle.loader.FileLoader;
@@ -46,7 +46,7 @@ public class ScheduledReloader implements AutoCloseable {
 
     private final FileLoader loader;
     private final SchedulerConfig schedulerConfig;
-    private final PolyglotContextConfig contextConfig;
+    private final PolyglotAccessConfig contextConfig;
     private final ScheduledReloadCallback callback;
     private ScheduledExecutorService executor;
 
@@ -59,17 +59,17 @@ public class ScheduledReloader implements AutoCloseable {
 
 
     public ScheduledReloader(FileSourceConfig sourceConfig, SchedulerConfig schedulerConfig,
-                             PolyglotContextConfig contextConfig, ScheduledReloadCallback callback) {
+                             PolyglotAccessConfig contextConfig, ScheduledReloadCallback callback) {
         this(FileSourceFactory.create(sourceConfig), schedulerConfig, contextConfig, callback);
     }
 
     public ScheduledReloader(FileSource source, SchedulerConfig schedulerConfig,
-                             PolyglotContextConfig contextConfig, ScheduledReloadCallback callback) {
+                             PolyglotAccessConfig contextConfig, ScheduledReloadCallback callback) {
         this(new FileLoader(source), schedulerConfig, contextConfig, callback);
     }
 
     public ScheduledReloader(FileLoader fileLoader, SchedulerConfig schedulerConfig,
-                             PolyglotContextConfig contextConfig, ScheduledReloadCallback callback) {
+                             PolyglotAccessConfig contextConfig, ScheduledReloadCallback callback) {
         this.loader = fileLoader;
         this.schedulerConfig = schedulerConfig;
         this.contextConfig = contextConfig;

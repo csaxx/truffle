@@ -119,11 +119,11 @@ class PolyglotInterpreterPythonLoadTest {
     }
 
     @Test
-    void reset_clearsAllContexts() throws Exception {
+    void clear_clearsAllContexts() throws Exception {
         PolyglotInterpreter interp = new PolyglotInterpreter();
         interp.addContext(TruffleLanguage.PYTHON, "a.py", "x = 1");
         interp.addContext(TruffleLanguage.PYTHON, "b.py", "y = 2");
-        interp.reset();
+        interp.clear();
         assertTrue(interp.getContexts().isEmpty());
         // interpreter is reusable after reset
         interp.addContext(TruffleLanguage.PYTHON, "c.py", "z = 3");

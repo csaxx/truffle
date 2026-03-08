@@ -3,7 +3,7 @@ package org.csa.truffle.flink;
 import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.Collector;
-import org.csa.truffle.interpreter.polyglot.PolyglotContextConfig;
+import org.csa.truffle.interpreter.polyglot.PolyglotAccessConfig;
 import org.csa.truffle.interpreter.polyglot.PolyglotInterpreter;
 import org.csa.truffle.scheduler.ScheduledReloader;
 import org.csa.truffle.scheduler.SchedulerConfig;
@@ -78,7 +78,7 @@ public class ProcessFunctionPython extends ProcessFunction<String, String> {
 
         log.info("Opening: loading Python scripts");
 
-        scheduler = new ScheduledReloader(sourceConfig, schedulerConfig, PolyglotContextConfig.MINIMAL,
+        scheduler = new ScheduledReloader(sourceConfig, schedulerConfig, PolyglotAccessConfig.MINIMAL,
                 (status, newInterpreter) -> {
                     // update interpreter (called from scheduler thread)
                     PolyglotInterpreter oldInterpreter = this.interpreter;

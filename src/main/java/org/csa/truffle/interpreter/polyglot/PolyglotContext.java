@@ -13,12 +13,14 @@ public class PolyglotContext implements AutoCloseable {
     private final Context context;
     private final String name;
     private final TruffleLanguage language;
+    private final String contentHash;
     private final Map<String, Value> memberCache = new HashMap<>();
 
-    public PolyglotContext(TruffleLanguage language, String name, Context context) {
+    public PolyglotContext(TruffleLanguage language, String name, Context context, String contentHash) {
         this.context = context;
         this.name = name;
         this.language = language;
+        this.contentHash = contentHash;
     }
 
     public Context context() {
@@ -31,6 +33,10 @@ public class PolyglotContext implements AutoCloseable {
 
     public TruffleLanguage language() {
         return language;
+    }
+
+    public String contentHash() {
+        return contentHash;
     }
 
     public Set<String> getMembers() {

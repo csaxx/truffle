@@ -11,9 +11,9 @@ import java.io.Serializable;
  * Configures GraalVM context permissions for {@link PolyglotInterpreter}.
  * <p>
  * Use one of the predefined constants ({@link #MINIMAL}, {@link #FULL}, {@link #SANDBOXED})
- * or construct a custom instance. Pass to {@link PolyglotInterpreter#PolyglotInterpreter(PolyglotContextConfig)}.
+ * or construct a custom instance. Pass to {@link PolyglotInterpreter#PolyglotInterpreter(PolyglotAccessConfig)}.
  */
-public record PolyglotContextConfig(
+public record PolyglotAccessConfig(
         HostAccessMode hostAccess,
         boolean allowHostClassLookup,
         IOAccessMode ioAccess,
@@ -23,15 +23,15 @@ public record PolyglotContextConfig(
 ) implements Serializable {
 
     /** Minimal: host objects only (out.collect()), deny class lookup / IO / native / threads / polyglot. */
-    public static final PolyglotContextConfig MINIMAL = new PolyglotContextConfig(
+    public static final PolyglotAccessConfig MINIMAL = new PolyglotAccessConfig(
             HostAccessMode.ALL, false, IOAccessMode.NONE, false, false, PolyglotAccessMode.NONE);
 
     /** Full: all permissions enabled. */
-    public static final PolyglotContextConfig FULL = new PolyglotContextConfig(
+    public static final PolyglotAccessConfig FULL = new PolyglotAccessConfig(
             HostAccessMode.ALL, true, IOAccessMode.ALL, true, true, PolyglotAccessMode.ALL);
 
     /** Sandboxed: no host access, no I/O — pure language sandbox. */
-    public static final PolyglotContextConfig SANDBOXED = new PolyglotContextConfig(
+    public static final PolyglotAccessConfig SANDBOXED = new PolyglotAccessConfig(
             HostAccessMode.NONE, false, IOAccessMode.NONE, false, false, PolyglotAccessMode.NONE);
 
     /**

@@ -7,6 +7,9 @@ import org.graalvm.polyglot.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -26,7 +29,7 @@ public class PolyglotInterpreter implements AutoCloseable {
      * Keyed by both language and config because GraalVM requires all contexts sharing an engine
      * to use the same host-access policy.
      */
-    private record EngineKey(TruffleLanguage language, PolyglotContextConfig config) {}
+    private record EngineKey(TruffleLanguage language, PolyglotAccessConfig config) {}
 
     private static final ConcurrentHashMap<EngineKey, Engine> SHARED_ENGINES = new ConcurrentHashMap<>();
 
@@ -40,22 +43,22 @@ public class PolyglotInterpreter implements AutoCloseable {
      */
     private final LinkedHashMap<String, PolyglotContext> contexts = new LinkedHashMap<>();
 
-    private final PolyglotContextConfig config;
+    private final PolyglotAccessConfig accessConfig;
 
     /**
-     * Creates an empty interpreter using {@link PolyglotContextConfig#MINIMAL} permissions.
+     * Creates an empty interpreter using {@link PolyglotAccessConfig#MINIMAL} permissions.
      * Use {@link #addContext} to load contexts.
      */
     public PolyglotInterpreter() {
-        this(PolyglotContextConfig.MINIMAL);
+        this(PolyglotAccessConfig.MINIMAL);
     }
 
     /**
      * Creates an empty interpreter with the given context permissions.
      * Use {@link #addContext} to load contexts.
      */
-    public PolyglotInterpreter(PolyglotContextConfig config) {
-        this.config = config;
+    public PolyglotInterpreter(PolyglotAccessConfig accessConfig) {
+        this.accessConfig = accessConfig;
     }
 
     /**
@@ -75,33 +78,28 @@ public class PolyglotInterpreter implements AutoCloseable {
 
         Context ctx = createContext(language);
         ctx.eval(Source.newBuilder(language.getId(), content, context).build());
-        contexts.put(context, new PolyglotContext(language, context, ctx));
+        contexts.put(context, new PolyglotContext(language, context, ctx, sha256(content)));
 
         log.debug("Loaded context '{}' ({})", context, language.getId());
     }
 
-    /**
-     * Closes all contexts and clears the map.
-     * The interpreter remains usable after this call; new contexts may be added via {@link #addContext}.
-     */
-    public void reset() {
-        log.debug("Resetting interpreter: {} context(s)", contexts.size());
+    private Context createContext(TruffleLanguage language) {
 
-        contexts.values().forEach(fc -> {
-            try {
-                fc.close();
-            } catch (Exception ignored) {
-            }
-        });
+        Engine engine = SHARED_ENGINES.computeIfAbsent(
+                new EngineKey(language, accessConfig),
+                k -> Engine.newBuilder(k.language().getId()).build());
 
-        contexts.clear();
+        return accessConfig.applyTo(Context.newBuilder(language.getId()).engine(engine)).build();
     }
 
-    private Context createContext(TruffleLanguage language) {
-        Engine engine = SHARED_ENGINES.computeIfAbsent(
-                new EngineKey(language, config),
-                k -> Engine.newBuilder(k.language().getId()).build());
-        return config.applyTo(Context.newBuilder(language.getId()).engine(engine)).build();
+    private static String sha256(String content) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(content.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     public boolean hasContext(String context) {
@@ -127,6 +125,23 @@ public class PolyglotInterpreter implements AutoCloseable {
         }
 
         return contexts.get(context);
+    }
+
+    /**
+     * Closes all contexts and clears the map.
+     * The interpreter remains usable after this call; new contexts may be added via {@link #addContext}.
+     */
+    public void clear() {
+        log.debug("Resetting interpreter: {} context(s)", contexts.size());
+
+        contexts.values().forEach(fc -> {
+            try {
+                fc.close();
+            } catch (Exception ignored) {
+            }
+        });
+
+        contexts.clear();
     }
 
     /**
@@ -256,7 +271,7 @@ public class PolyglotInterpreter implements AutoCloseable {
 
     @Override
     public void close() {
-        reset();
+        clear();
     }
 
 }
