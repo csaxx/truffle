@@ -29,7 +29,8 @@ public class PolyglotInterpreter implements AutoCloseable {
      * Keyed by both language and config because GraalVM requires all contexts sharing an engine
      * to use the same host-access policy.
      */
-    private record EngineKey(TruffleLanguage language, PolyglotAccessConfig config) {}
+    private record EngineKey(TruffleLanguage language, PolyglotAccessConfig config) {
+    }
 
     private static final ConcurrentHashMap<EngineKey, Engine> SHARED_ENGINES = new ConcurrentHashMap<>();
 
@@ -299,6 +300,43 @@ public class PolyglotInterpreter implements AutoCloseable {
                 getMember(entry.getKey(), member).executeVoid(args);
             }
         }
+    }
+
+    /**
+     * Invokes {@code member} as a method on the bindings of the given context.
+     * Unlike {@link #execute}, the bindings object is passed as the receiver.
+     *
+     * @throws NoSuchElementException if the context is not loaded
+     */
+    public Value invoke(String context, String member, Object... args) throws NoSuchElementException {
+        return getContext(context).invokeMember(member, args);
+    }
+
+    /**
+     * Invokes {@code member} on every loaded context, in index order.
+     *
+     * @throws NoSuchElementException if any context is not loaded
+     */
+    public Map<String, Value> invokeAll(String member, Object... args) throws NoSuchElementException {
+        Map<String, Value> results = new LinkedHashMap<>();
+        for (Map.Entry<String, PolyglotContext> entry : contexts.entrySet()) {
+            results.put(entry.getKey(), entry.getValue().invokeMember(member, args));
+        }
+        return results;
+    }
+
+    /**
+     * Invokes {@code member} on every loaded context that defines it, skipping those that do not.
+     * Returns results in index order (only from contexts where the member was present).
+     */
+    public Map<String, Value> invokeAllPresent(String member, Object... args) {
+        Map<String, Value> results = new LinkedHashMap<>();
+        for (Map.Entry<String, PolyglotContext> entry : contexts.entrySet()) {
+            if (entry.getValue().hasMember(member)) {
+                results.put(entry.getKey(), entry.getValue().invokeMember(member, args));
+            }
+        }
+        return results;
     }
 
     @Override

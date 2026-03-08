@@ -76,6 +76,15 @@ public class PolyglotContext implements AutoCloseable {
         return member;
     }
 
+    /**
+     * Invokes {@code memberName} as a method on the language bindings, passing the bindings as receiver.
+     *
+     * @throws NoSuchElementException if the member is not defined
+     */
+    public Value invokeMember(String memberName, Object... args) {
+        return context.getBindings(language.getId()).invokeMember(memberName, args);
+    }
+
     @Override
     public void close() {
         memberCache.clear();
